@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+  <span class="page-title">⚙️ Settings</span>
+</div>
+
+<div class="page-content">
+  <!-- LLM Settings -->
+  <div class="card" style="margin-bottom:16px;">
+    <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">
+      🤖 AI Model
+    </div>
+    <table style="font-size:12px;">
+      <tr>
+        <td style="color:var(--text-muted);width:160px;">Primary model</td>
+        <td class="mono" style="color:var(--accent);">{{ config.llm.model }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text-muted);">Fallback models</td>
+        <td class="mono" style="color:var(--text-dim);">
+          {{ config.llm.fallback_models | join(', ') or 'None' }}
+        </td>
+      </tr>
+      <tr>
+        <td style="color:var(--text-muted);">Max tokens</td>
+        <td class="mono">{{ config.llm.max_tokens }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text-muted);">Temperature</td>
+        <td class="mono">{{ config.llm.temperature }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text-muted);">Cost tracking</td>
+        <td>
+          <span class="badge {% if config.llm.cost_tracking %}badge-approved{% else %}badge-denied{% endif %}">
+            {{ 'enabled' if config.llm.cost_tracking else 'disabled' }}
+          </span>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Permission Settings -->
+  <div class="card" style="margin-bottom:16px;">
+    <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">
+      🛡️ Permissions
+    </div>
+    <table style="font-size:12px;">
+      <tr>
+        <td style="color:var(--text-muted);width:160px;">Default tier</td>
+        <td><span class="badge badge-{{ config.permissions.default_tier }}">{{ config.permissions.default_tier }}</span></td>
+      </tr>
+      <tr>
+        <td style="color:var(--text-muted);">Audit log</td>
+        <td>
+          <span class="badge {% if config.permissions.audit_log %}badge-approved{% else %}badge-denied{% endif %}">
+            {{ 'enabled' if config.permissions.audit_log else 'disabled' }}
+          </span>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Security Settings -->
+  <div class="card" style="margin-bottom:16px;">
+    <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">
+      🔒 Security
+    </div>
+    <table style="font-size:12px;">
+      <tr>
+        <td style="color:var(--text-muted);width:160px;">Prompt injection defense</td>
+        <td>
+          <span class="badge {% if config.security.prompt_injection_defense %}badge-approved{% else %}badge-denied{% endif %}">
+            {{ 'active' if config.security.prompt_injection_defense else 'disabled' }}
+          </span>
+        </td>
+      </tr>
+      <tr>
+        <td style="color:var(--text-muted);">Context isolation</td>
+        <td>
+          <span class="badge {% if config.security.context_isolation %}badge-approved{% else %}badge-denied{% endif %}">
+            {{ 'active' if config.security.context_isolation else 'disabled' }}
+          </span>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Memory Settings -->
+  <div class="card" style="margin-bottom:16px;">
+    <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">
+      🧠 Memory
+    </div>
+    <table style="font-size:12px;">
+      <tr>
+        <td style="color:var(--text-muted);width:160px;">Database</td>
+        <td class="mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.db_path }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text-muted);">Vector index</td>
+        <td class="mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.chroma_path }}</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text-muted);">Max facts</td>
+        <td class="mono">{{ config.memory.max_facts }}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Config file info -->
+  <div style="font-size:11px;color:var(--text-muted);padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);">
+    ℹ️ Edit <span class="mono" style="color:var(--text-dim);">~/.duckclaw/duckclaw.yaml</span> to change settings,
+    then restart DuckClaw. Run <span class="mono" style="color:var(--text-dim);">duckclaw setup</span> to reconfigure from scratch.
+  </div>
+</div>
+{% endblock %}

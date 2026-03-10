@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+  <span class="page-title">🧠 Memory</span>
+  <div style="display:flex;gap:8px;">
+    <select id="categoryFilter" class="btn btn-ghost" onchange="filterFacts()" style="cursor:pointer;font-size:12px;">
+      <option value="">All categories</option>
+      <option value="work">Work</option>
+      <option value="personal">Personal</option>
+      <option value="preferences">Preferences</option>
+      <option value="health">Health</option>
+      <option value="calendar">Calendar</option>
+      <option value="general">General</option>
+    </select>
+  </div>
+</div>
+
+<div class="page-content">
+  <!-- Stats -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-value text-accent">{{ stats.total_facts }}</div>
+      <div class="stat-label">Stored Facts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value text-green">{{ stats.total_messages }}</div>
+      <div class="stat-label">Messages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:#8b5cf6;">{{ stats.total_sessions }}</div>
+      <div class="stat-label">Sessions</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:#3b82f6;">{{ stats.semantic_index_size }}</div>
+      <div class="stat-label">Indexed</div>
+    </div>
+  </div>
+
+  <!-- Facts Table -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;">Stored Facts</div>
+      <div style="font-size:11px;color:var(--text-muted);">
+        You can view, edit, or delete any fact below.
+      </div>
+    </div>
+
+    {% if facts %}
+    <table id="factsTable">
+      <thead>
+        <tr>
+          <th>Fact</th>
+          <th>Category</th>
+          <th>Confidence</th>
+          <th>Stored</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fact in facts %}
+        <tr data-id="{{ fact.id }}" data-category="{{ fact.category }}">
+          <td style="color:var(--text);max-width:400px;">{{ fact.fact }}</td>
+          <td>
+            <span class="badge" style="
+              background: {% if fact.category == 'work' %}rgba(59,130,246,0.12){% elif fact.category == 'personal' %}rgba(34,197,94,0.12){% elif fact.category == 'preferences' %}rgba(245,158,11,0.12){% else %}rgba(100,116,139,0.12){% endif %};
+              color: {% if fact.category == 'work' %}#3b82f6{% elif fact.category == 'personal' %}#22c55e{% elif fact.category == 'preferences' %}#f59e0b{% else %}#94a3b8{% endif %};
+            ">{{ fact.category }}</span>
+          </td>
+          <td class="mono" style="color:{% if fact.confidence > 0.9 %}var(--green){% elif fact.confidence > 0.7 %}var(--accent){% else %}var(--text-muted){% endif %};">
+            {{ "%.0f"|format(fact.confidence * 100) }}%
+          </td>
+          <td class="text-muted mono" style="font-size:11px;">{{ fact.created_at[:10] }}</td>
+          <td>
+            <button
+              class="btn btn-danger"
+              style="padding:4px 10px;font-size:11px;"
+              onclick="deleteFact({{ fact.id }}, this)"
+            >Delete</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:40px;color:var(--text-muted);">
+      <div style="font-size:32px;margin-bottom:12px;">🧠</div>
+      <div style="font-size:13px;">No facts stored yet.</div>
+      <div style="font-size:11px;margin-top:6px;">
+        DuckClaw will learn about you as you chat. Facts are extracted automatically.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function deleteFact(factId, btn) {
+    if (!confirm('Delete this fact?')) return;
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    const res = await fetch(`/api/memory/facts/${factId}`, { method: 'DELETE' });
+    if (res.ok) {
+      btn.closest('tr').remove();
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Delete';
+      alert('Failed to delete fact');
+    }
+  }
+
+  function filterFacts() {
+    const cat = document.getElementById('categoryFilter').value;
+    document.querySelectorAll('#factsTable tbody tr').forEach(row => {
+      row.style.display = (!cat || row.dataset.category === cat) ? '' : 'none';
+    });
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,518 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+  .chat-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .message {
+    display: flex;
+    gap: 12px;
+    max-width: 780px;
+  }
+
+  .message.user { flex-direction: row-reverse; align-self: flex-end; }
+  .message.assistant { align-self: flex-start; }
+
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .message.user .message-avatar {
+    background: rgba(245,158,11,0.15);
+    border: 1px solid rgba(245,158,11,0.3);
+  }
+
+  .message.assistant .message-avatar {
+    background: rgba(59,130,246,0.12);
+    border: 1px solid rgba(59,130,246,0.2);
+  }
+
+  .message-bubble {
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    max-width: 600px;
+  }
+
+  .message.user .message-bubble {
+    background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.2);
+    color: var(--text);
+  }
+
+  .message.assistant .message-bubble {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+
+  .message-bubble pre {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    overflow-x: auto;
+    margin: 10px 0;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    line-height: 1.5;
+  }
+
+  .message-bubble code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: rgba(255,255,255,0.08);
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+
+  .message-bubble p { margin-bottom: 8px; }
+  .message-bubble p:last-child { margin-bottom: 0; }
+
+  .message-time {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    text-align: right;
+  }
+
+  .message.assistant .message-time { text-align: left; }
+
+  /* Thinking indicator */
+  .thinking {
+    display: none;
+    align-self: flex-start;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .thinking.show { display: flex; }
+
+  .thinking-dots {
+    display: flex;
+    gap: 4px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  .thinking-dot {
+    width: 6px; height: 6px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    animation: bounce 1.2s ease-in-out infinite;
+  }
+
+  .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-6px); }
+  }
+
+  /* Input area */
+  .chat-input-area {
+    border-top: 1px solid var(--border);
+    padding: 16px 24px;
+    background: var(--surface);
+  }
+
+  .chat-input-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    max-width: 780px;
+    margin: 0 auto;
+  }
+
+  .chat-input-wrap {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-lg);
+    padding: 10px 14px;
+    transition: border-color 0.15s;
+  }
+
+  .chat-input-wrap:focus-within {
+    border-color: rgba(245,158,11,0.4);
+  }
+
+  #chatInput {
+    width: 100%;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-size: 13.5px;
+    font-family: inherit;
+    resize: none;
+    min-height: 20px;
+    max-height: 120px;
+    line-height: 1.5;
+  }
+
+  #chatInput::placeholder { color: var(--text-muted); }
+
+  .send-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius);
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+
+  .send-btn:hover { background: #fbbf24; }
+  .send-btn:disabled { background: var(--surface2); cursor: not-allowed; }
+
+  .chat-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  /* Notification toast */
+  .toast-area {
+    position: fixed;
+    bottom: 90px;
+    right: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+  }
+
+  .toast {
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text-dim);
+    max-width: 300px;
+    animation: slideIn 0.2s ease;
+  }
+
+  @keyframes slideIn {
+    from { transform: translateX(20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* Welcome screen */
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 40px;
+  }
+
+  .welcome-icon { font-size: 48px; }
+  .welcome-title { font-size: 18px; font-weight: 700; color: var(--text-dim); }
+  .welcome-sub { font-size: 13px; max-width: 400px; line-height: 1.6; }
+
+  .starter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 8px;
+  }
+
+  .starter-pill {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    padding: 7px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-dim);
+    transition: all 0.15s;
+  }
+
+  .starter-pill:hover {
+    border-color: rgba(245,158,11,0.4);
+    color: var(--accent);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="chat-layout">
+  <!-- Messages -->
+  <div class="chat-messages" id="messages">
+    <!-- Welcome screen (shown when no messages) -->
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">🦆🦞</div>
+      <div class="welcome-title">DuckClaw is ready</div>
+      <div class="welcome-sub">
+        Your secure AI assistant. Everything you need — with your permission, every time.
+      </div>
+      <div class="starter-pills">
+        <div class="starter-pill" onclick="sendStarter(this)">What can you do?</div>
+        <div class="starter-pill" onclick="sendStarter(this)">What do you remember about me?</div>
+        <div class="starter-pill" onclick="sendStarter(this)">Search the web for something</div>
+        <div class="starter-pill" onclick="sendStarter(this)">Help me write something</div>
+      </div>
+    </div>
+
+    <!-- Thinking indicator -->
+    <div class="thinking" id="thinking">
+      <div class="message-avatar">🦆</div>
+      <div class="thinking-dots">
+        <div class="thinking-dot"></div>
+        <div class="thinking-dot"></div>
+        <div class="thinking-dot"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notifications -->
+  <div class="toast-area" id="toastArea"></div>
+
+  <!-- Input -->
+  <div class="chat-input-area">
+    <div class="chat-input-row">
+      <div class="chat-input-wrap">
+        <textarea
+          id="chatInput"
+          placeholder="Message DuckClaw..."
+          rows="1"
+        ></textarea>
+      </div>
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send (Enter)">
+        ➤
+      </button>
+    </div>
+    <div class="chat-hint">Enter to send · Shift+Enter for new line · Your messages stay local</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const sessionId = 'dashboard-' + Math.random().toString(36).slice(2, 9);
+  let ws = null;
+  let pendingActionId = null;
+  let messageCount = 0;
+
+  // ── WebSocket ──────────────────────────────────────────────────────────────
+  function connectWS() {
+    ws = new WebSocket(`ws://${location.host}/ws/chat`);
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      handleWSMessage(data);
+    };
+
+    ws.onclose = () => {
+      setTimeout(connectWS, 2000);  // Auto-reconnect
+    };
+
+    ws.onerror = (e) => console.error('WebSocket error:', e);
+  }
+
+  function handleWSMessage(data) {
+    if (data.type === 'thinking') {
+      showThinking(true);
+    } else if (data.type === 'response') {
+      showThinking(false);
+      appendMessage('assistant', data.content);
+    } else if (data.type === 'notification') {
+      showToast(data.message);
+    } else if (data.type === 'approval_request') {
+      showThinking(false);
+      showApprovalModal(data.action_id, data.preview);
+    } else if (data.type === 'error') {
+      showThinking(false);
+      appendMessage('assistant', '❌ Error: ' + data.message);
+    }
+  }
+
+  // ── Send Message ───────────────────────────────────────────────────────────
+  function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+    // Hide welcome screen
+    if (messageCount === 0) {
+      document.getElementById('welcome').style.display = 'none';
+    }
+
+    appendMessage('user', text);
+    input.value = '';
+    input.style.height = 'auto';
+
+    ws.send(JSON.stringify({
+      type: 'message',
+      content: text,
+      session_id: sessionId,
+    }));
+
+    document.getElementById('sendBtn').disabled = true;
+    setTimeout(() => document.getElementById('sendBtn').disabled = false, 500);
+  }
+
+  function sendStarter(el) {
+    document.getElementById('chatInput').value = el.textContent;
+    sendMessage();
+  }
+
+  // ── Message Rendering ──────────────────────────────────────────────────────
+  function appendMessage(role, content) {
+    messageCount++;
+    const messages = document.getElementById('messages');
+
+    const div = document.createElement('div');
+    div.className = `message ${role}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.textContent = role === 'user' ? '👤' : '🦆';
+
+    const right = document.createElement('div');
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+    bubble.innerHTML = markdownToHtml(content);
+
+    const time = document.createElement('div');
+    time.className = 'message-time';
+    time.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+
+    right.appendChild(bubble);
+    right.appendChild(time);
+
+    div.appendChild(avatar);
+    div.appendChild(right);
+
+    // Insert before thinking indicator
+    const thinking = document.getElementById('thinking');
+    messages.insertBefore(div, thinking);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function showThinking(show) {
+    const el = document.getElementById('thinking');
+    el.classList.toggle('show', show);
+    const msgs = document.getElementById('messages');
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  // ── Simple Markdown Parser ─────────────────────────────────────────────────
+  function markdownToHtml(text) {
+    return text
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>')
+      .replace(/^(?!<[hpulpre])(.+)$/gm, (m) => m ? `<p>${m}</p>` : m);
+  }
+
+  // ── Approval Modal ─────────────────────────────────────────────────────────
+  function showApprovalModal(actionId, preview) {
+    pendingActionId = actionId;
+
+    const riskEmoji = {low:'🟢', medium:'🟡', high:'🔴'}[preview.risk_level] || '⚪';
+    document.getElementById('modalTitle').textContent = '⚠️ ' + preview.description;
+    document.getElementById('modalDesc').textContent =
+      `DuckClaw wants to perform: ${preview.action_type}`;
+
+    const details = preview.details || {};
+    document.getElementById('modalDetails').textContent =
+      Object.keys(details).length
+        ? Object.entries(details).map(([k,v]) => `${k}: ${v}`).join('\n')
+        : 'No additional details';
+
+    document.getElementById('modalMeta').innerHTML =
+      `<span>${riskEmoji} Risk: ${preview.risk_level}</span>` +
+      `<span>${preview.reversible ? '✓ Reversible' : '✗ Irreversible'}</span>`;
+
+    document.getElementById('approvalModal').classList.add('show');
+  }
+
+  function handleApproval(approved) {
+    document.getElementById('approvalModal').classList.remove('show');
+    if (ws && pendingActionId) {
+      ws.send(JSON.stringify({
+        type: 'approval',
+        action_id: pendingActionId,
+        approved: approved,
+      }));
+      pendingActionId = null;
+    }
+  }
+
+  // ── Toast Notifications ────────────────────────────────────────────────────
+  function showToast(message) {
+    const area = document.getElementById('toastArea');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    area.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  }
+
+  // ── Input auto-resize ──────────────────────────────────────────────────────
+  const input = document.getElementById('chatInput');
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  connectWS();
+  input.focus();
+</script>
+{% endblock %}

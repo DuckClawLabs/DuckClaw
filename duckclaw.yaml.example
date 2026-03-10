@@ -1,0 +1,66 @@
+# DuckClaw Configuration
+# Copy this to ~/.duckclaw/duckclaw.yaml and edit as needed.
+# Or run: duckclaw setup  (guided wizard)
+
+# ── AI Model ─────────────────────────────────────────────────────────────────
+llm:
+  # Primary model (LiteLLM format)
+  # Claude:  claude-haiku-4-5-20251001 / claude-sonnet-4-20250514
+  # Gemini:  gemini/gemini-2.0-flash  (free tier)
+  # GPT:     gpt-4o-mini / gpt-4o
+  # Local:   ollama/llama3.2          (if Ollama installed)
+  model: "claude-haiku-4-5-20251001"
+
+  # Auto-failover: tried in order if primary fails
+  fallback_models:
+    - "gemini/gemini-2.0-flash"   # Free, no daily limit worries
+
+  cost_tracking: true    # Track API spend per conversation
+  max_tokens: 4096
+  temperature: 0.7
+  timeout: 60            # seconds before giving up on a model
+
+
+# ── Memory ────────────────────────────────────────────────────────────────────
+memory:
+  db_path: "~/.duckclaw/duckclaw.db"       # SQLite: facts + conversations + audit
+  chroma_path: "~/.duckclaw/chroma_db"     # ChromaDB: semantic search index
+  max_facts: 10000                          # Max stored facts before oldest are pruned
+  semantic_search_results: 5               # How many past messages to surface per query
+
+
+# ── Permission Engine ─────────────────────────────────────────────────────────
+permissions:
+  # Default tier for unknown actions (conservative)
+  # Options: "safe" | "notify" | "ask" | "block"
+  default_tier: "ask"
+
+  audit_log: true          # Log every action (strongly recommended)
+  notify_on_safe: false    # Don't notify for SAFE-tier actions (spam prevention)
+
+  # Per-action overrides (optional)
+  # overrides:
+  #   web_browse: "safe"        # Trust browsing without notification
+  #   file_read: "safe"         # Trust file reading
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+dashboard:
+  host: "127.0.0.1"       # Change to "0.0.0.0" to access from other devices
+  port: 8741
+  auto_open_browser: true
+
+
+# ── Security ──────────────────────────────────────────────────────────────────
+security:
+  # Isolate user instructions from untrusted external data (web pages, emails)
+  prompt_injection_defense: true
+  context_isolation: true
+
+
+# ── API Keys ──────────────────────────────────────────────────────────────────
+# Store keys in ~/.duckclaw/.env (chmod 600), NOT here.
+# .env format:
+#   ANTHROPIC_API_KEY=sk-ant-...
+#   GEMINI_API_KEY=AIza...
+#   OPENAI_API_KEY=sk-...

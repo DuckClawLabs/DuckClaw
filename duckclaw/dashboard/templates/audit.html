@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+  <span class="page-title">📋 Audit Log</span>
+  <div style="display:flex;gap:8px;">
+    <a href="/api/audit/export?fmt=json" class="btn btn-ghost" style="font-size:11px;">↓ JSON</a>
+    <a href="/api/audit/export?fmt=csv"  class="btn btn-ghost" style="font-size:11px;">↓ CSV</a>
+  </div>
+</div>
+
+<div class="page-content">
+  <!-- Stats -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-value text-dim">{{ stats.total_actions }}</div>
+      <div class="stat-label">Total Actions</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value text-green">{{ stats.approved }}</div>
+      <div class="stat-label">Approved</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value text-accent">{{ stats.denied }}</div>
+      <div class="stat-label">Denied</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value text-red">{{ stats.blocked }}</div>
+      <div class="stat-label">Blocked</div>
+    </div>
+  </div>
+
+  <!-- Search + Filters -->
+  <div style="margin-bottom:12px;">
+    <input
+      id="auditSearch"
+      type="text"
+      placeholder="Search actions, descriptions, sources..."
+      oninput="debounceSearch()"
+      style="width:100%;padding:8px 12px;background:var(--surface);border:1px solid var(--border);
+             border-radius:6px;color:var(--text);font-size:13px;outline:none;"
+    />
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+    <button class="btn btn-ghost active-filter" onclick="filterBy('status', '', this)">All</button>
+    <button class="btn btn-ghost" onclick="filterBy('status', 'user_approved', this)">✓ Approved</button>
+    <button class="btn btn-ghost" onclick="filterBy('status', 'user_denied', this)">✗ Denied</button>
+    <button class="btn btn-ghost" onclick="filterBy('status', 'blocked', this)">🚫 Blocked</button>
+    <button class="btn btn-ghost" onclick="filterBy('tier', 'ask', this)">ASK tier</button>
+    <button class="btn btn-ghost" onclick="filterBy('tier', 'block', this)">BLOCK tier</button>
+    <button class="btn btn-ghost" onclick="filterBy('action_type', 'security.injection_signal', this)">⚠️ Injection</button>
+  </div>
+
+  <!-- Log Table -->
+  <div class="card" style="padding:0;overflow:hidden;">
+    {% if logs %}
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Action</th>
+          <th>Tier</th>
+          <th>Description</th>
+          <th>Status</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody id="auditBody">
+        {% for log in logs %}
+        <tr>
+          <td class="mono text-muted" style="font-size:10px;white-space:nowrap;">
+            {{ log.timestamp[:19].replace('T',' ') }}
+          </td>
+          <td class="mono" style="font-size:11px;color:var(--text-dim);">{{ log.action_type }}</td>
+          <td>
+            <span class="badge badge-{{ log.tier }}">{{ log.tier }}</span>
+          </td>
+          <td style="color:var(--text-dim);max-width:300px;font-size:12px;">
+            {{ log.description }}
+          </td>
+          <td>
+            {% if log.status in ('auto_approved', 'notified') %}
+              <span class="badge badge-auto">{{ log.status.replace('_', ' ') }}</span>
+            {% elif log.status == 'user_approved' %}
+              <span class="badge badge-approved">approved</span>
+            {% elif log.status == 'user_denied' %}
+              <span class="badge badge-denied">denied</span>
+            {% elif log.status == 'blocked' %}
+              <span class="badge badge-blocked">blocked</span>
+            {% else %}
+              <span class="badge">{{ log.status }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted" style="font-size:11px;">{{ log.source or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:40px;color:var(--text-muted);">
+      <div style="font-size:32px;margin-bottom:12px;">📋</div>
+      <div style="font-size:13px;">No actions logged yet.</div>
+      <div style="font-size:11px;margin-top:6px;">
+        Every action DuckClaw takes will appear here with full details.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let _activeFilter = { param: '', value: '' };
+  let _searchTimer = null;
+
+  function debounceSearch() {
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => loadAudit(), 250);
+  }
+
+  async function filterBy(param, value, btn) {
+    document.querySelectorAll('.active-filter').forEach(b => b.classList.remove('active-filter'));
+    btn.classList.add('active-filter');
+    _activeFilter = { param, value };
+    await loadAudit();
+  }
+
+  async function loadAudit() {
+    const q = document.getElementById('auditSearch')?.value?.trim() || '';
+    const { param, value } = _activeFilter;
+
+    const params = new URLSearchParams({ limit: 200 });
+    if (param && value) params.set(param, value);
+    if (q) params.set('q', q);
+
+    const res = await fetch(`/api/audit?${params}`);
+    const data = await res.json();
+
+    const tbody = document.getElementById('auditBody');
+    if (!tbody) return;
+
+    if (!data.logs.length) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">No matching entries</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = data.logs.map(log => {
+      const statusBadge = {
+        auto_approved: '<span class="badge badge-auto">auto</span>',
+        notified:      '<span class="badge badge-notify">notified</span>',
+        user_approved: '<span class="badge badge-approved">approved</span>',
+        user_denied:   '<span class="badge badge-denied">denied</span>',
+        blocked:       '<span class="badge badge-blocked">blocked</span>',
+      }[log.status] || `<span class="badge">${log.status}</span>`;
+
+      const isInjection = log.action_type === 'security.injection_signal';
+      const rowStyle = isInjection ? 'background:rgba(239,68,68,0.06);' : '';
+
+      return `<tr style="${rowStyle}">
+        <td class="mono text-muted" style="font-size:10px;white-space:nowrap;">${log.timestamp.slice(0,19).replace('T',' ')}</td>
+        <td class="mono" style="font-size:11px;color:${isInjection ? 'var(--red)' : 'var(--text-dim)'};">${log.action_type}</td>
+        <td><span class="badge badge-${log.tier}">${log.tier}</span></td>
+        <td style="color:var(--text-dim);max-width:300px;font-size:12px;">${log.description}</td>
+        <td>${statusBadge}</td>
+        <td class="text-muted" style="font-size:11px;">${log.source || '—'}</td>
+      </tr>`;
+    }).join('');
+  }
+</script>
+{% endblock %}
