@@ -24,7 +24,7 @@ DUCK_BANNER = """
     ██████╔╝╚██████╔╝╚██████╗██║  ██╗╚██████╗███████╗██║  ██║╚███╔███╔╝
     ╚═════╝  ╚═════╝  ╚═════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝
 [/bold yellow]
-[dim]    🦆🦞  Powerful AI — built for you, built with you, built securely.[/dim]
+[dim]    🦆🤖  Powerful AI — built for you, built with you, built securely.[/dim]
 """
 
 
@@ -42,7 +42,7 @@ def check_config_exists() -> bool:
 @click.group()
 @click.version_option(version="0.1.0", prog_name="DuckClaw")
 def main():
-    """🦆🦞 DuckClaw — Secure personal AI assistant."""
+    """🦆🤖 DuckClaw — Secure personal AI assistant."""
     pass
 
 
@@ -99,7 +99,7 @@ def chat(model):
         console.print("[red]No config found. Run [bold]duckclaw setup[/bold] first.[/red]")
         sys.exit(1)
 
-    console.print("[bold green]💬 DuckClaw Chat[/bold green] [dim](type 'exit' to quit, 'clear' to reset)[/dim]\n")
+    console.print("[bold green]💬 DuckClaw Chat[/bold green] [dim](type 'exit' to quit · 'new' for new conversation · 'clear' to reset screen)[/dim]\n")
 
     async def _chat_loop():
         from duckclaw.core.config import load_config
@@ -112,7 +112,11 @@ def chat(model):
         orchestrator = Orchestrator(config)
         await orchestrator.initialize()
 
-        session_id = f"terminal-{os.getpid()}"
+        def _new_session_id():
+            import uuid
+            return f"terminal-{uuid.uuid4().hex[:8]}"
+
+        session_id = _new_session_id()
 
         while True:
             try:
@@ -130,6 +134,10 @@ def chat(model):
                 console.clear()
                 print_banner()
                 continue
+            if user_input.lower() == "new":
+                session_id = _new_session_id()
+                console.print(f"\n[bold green]✦ New conversation started[/bold green] [dim](session {session_id})[/dim]\n")
+                continue
 
             with console.status("[dim]Thinking...[/dim]"):
                 response = await orchestrator.chat(
@@ -138,7 +146,7 @@ def chat(model):
                     source="terminal",
                 )
 
-            console.print(f"[bold yellow]🦆 DuckClaw:[/bold yellow] {response['reply']}\n")
+            console.print(f"[bold yellow]🦆🤖 DuckClaw:[/bold yellow] {response['reply']}\n")
 
             # Show permission notifications if any
             for note in response.get("notifications", []):
@@ -173,7 +181,7 @@ def status():
             f"[green]✓[/green] Fallback: [bold]{', '.join(config.llm.fallback_models) or 'none'}[/bold]\n"
             f"[green]✓[/green] Dashboard: [bold]localhost:{config.dashboard.port}[/bold]\n"
             f"[green]✓[/green] Memory: [bold]{config.memory.db_path}[/bold]",
-            title="🦆 DuckClaw Status",
+            title="🦆🤖 DuckClaw Status",
             border_style="green",
         ))
 

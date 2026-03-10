@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "duckclaw"
@@ -9,8 +9,19 @@ description = "Powerful AI — built for you, built with you, built securely. Lo
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
-authors = [{ name = "DuckClaw Contributors" }]
-keywords = ["ai", "assistant", "local-llm", "privacy", "automation"]
+
+authors = [
+    { name = "DuckClaw Contributors" }
+]
+
+keywords = [
+    "ai",
+    "assistant",
+    "local-llm",
+    "privacy",
+    "automation"
+]
+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -21,64 +32,66 @@ classifiers = [
 ]
 
 dependencies = [
-    # API & Server
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.30.0",
-    "jinja2>=3.1.4",
-    "python-multipart>=0.0.9",
-    "websockets>=12.0",
+    # API
+    "fastapi>=0.111,<0.112",
+    "uvicorn[standard]>=0.30,<0.31",
+    "jinja2>=3.1,<4",
+    "python-multipart>=0.0.9,<0.1",
+    "websockets>=12,<13",
 
     # LLM
-    "litellm>=1.40.0",
-    "anthropic>=0.30.0",
+    "litellm>=1.40,<2",
+    "anthropic>=0.30,<1",
 
     # Memory
-    "chromadb>=0.5.0",
-    "aiosqlite>=0.20.0",
+    "chromadb>=0.5,<0.6",
+    "aiosqlite>=0.20,<1",
 
     # CLI
-    "click>=8.1.7",
-    "questionary>=2.0.1",
-    "rich>=13.7.0",
+    "click>=8.1,<9",
+    "questionary>=2.0,<3",
+    "rich>=13.7,<14",
 
     # Config
-    "pyyaml>=6.0.1",
-    "python-dotenv>=1.0.1",
-    "pydantic>=2.7.0",
-    "pydantic-settings>=2.3.0",
+    "pyyaml>=6,<7",
+    "python-dotenv>=1,<2",
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
 
-    # Sprint 2: Messaging
-    "python-telegram-bot>=21.0",
-    "discord.py>=2.3.0",
+    # Messaging
+    "python-telegram-bot>=21,<22",
+    "discord.py>=2.3,<3",
 
-    # Sprint 2: Skills
-    "duckduckgo-search>=6.0.0",
-    "mss>=9.0.0",
-    "Pillow>=10.0.0",
-    "apscheduler>=3.10.0",
+    # Skills
+    "duckduckgo-search>=6,<7",
+    "mss>=9,<10",
+    "Pillow>=10,<11",
+    "apscheduler>=3.10,<4",
 
-    # Sprint 3: Browser (optional install via playwright install)
-    "playwright>=1.40.0",
+    # Browser automation
+    "playwright>=1.40,<2"
 ]
 
 [project.optional-dependencies]
+
 camera = [
-    "opencv-python>=4.9.0",
+    "opencv-python>=4.9,<5"
 ]
+
 dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
-    "pytest-cov>=5.0.0",
-    "httpx>=0.27.0",
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.23,<1",
+    "pytest-cov>=5,<6",
+    "httpx>=0.27,<1"
 ]
 
 [project.scripts]
 duckclaw = "duckclaw.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/duckclaw"
-Repository = "https://github.com/yourusername/duckclaw"
-Issues = "https://github.com/yourusername/duckclaw/issues"
+Homepage = "https://github.com/duckclaw/duckclaw"
+Repository = "https://github.com/duckclaw/duckclaw"
+Issues = "https://github.com/duckclaw/duckclaw/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

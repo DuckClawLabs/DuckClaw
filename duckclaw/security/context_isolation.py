@@ -54,7 +54,6 @@ EXTERNAL_DATA_END = "[EXTERNAL_DATA_END]"
 
 def build_safe_messages(
     user_message: str,
-    system_prompt: str,
     conversation_history: list[dict],
     external_data: Optional[str] = None,
     external_data_label: str = "external content",
@@ -74,16 +73,11 @@ def build_safe_messages(
     """
     messages = []
 
-    # 1. Trusted system prompt
-    messages.append({
-        "role": "system",
-        "content": system_prompt,
-    })
 
-    # 2. Conversation history (trusted — these came from user/assistant)
+    # 1. Conversation history (trusted — these came from user/assistant)
     messages.extend(conversation_history)
 
-    # 3. External data (if any) — wrapped in security boundary
+    # 2. External data (if any) — wrapped in security boundary
     if external_data and external_data.strip():
         sanitized = _sanitize_external(external_data)
         isolation_message = (
@@ -97,7 +91,7 @@ def build_safe_messages(
             "content": isolation_message,
         })
 
-    # 4. User message (trusted — the actual instruction)
+    # 3. User message (trusted — the actual instruction)
     messages.append({
         "role": "user",
         "content": (

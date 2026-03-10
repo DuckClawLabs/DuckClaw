@@ -1,4 +1,4 @@
-# 🦆🦞 DuckClaw
+# 🦆🤖 DuckClaw
 
 **Powerful AI — built for you, built with you, built securely.**
 *Local-first personal AI assistant with a 4-tier permission engine.*

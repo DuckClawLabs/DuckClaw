@@ -8,8 +8,9 @@ llm:
   # Claude:  claude-haiku-4-5-20251001 / claude-sonnet-4-20250514
   # Gemini:  gemini/gemini-2.0-flash  (free tier)
   # GPT:     gpt-4o-mini / gpt-4o
-  # Local:   ollama/llama3.2          (if Ollama installed)
-  model: "claude-haiku-4-5-20251001"
+  # Local:   ollama/gemma3:1b          (if Ollama installed)
+  # model: "claude-haiku-4-5-20251001"
+  model: "ollama/gemma3:1b"
 
   # Auto-failover: tried in order if primary fails
   fallback_models:

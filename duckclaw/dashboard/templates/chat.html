@@ -274,11 +274,20 @@
 
 {% block content %}
 <div class="chat-layout">
+
+  <!-- Chat header -->
+  <div class="page-header">
+    <span class="page-title">💬 Chat</span>
+    <button class="btn btn-ghost" onclick="newConversation()" title="Start a new conversation">
+      ✦ New Chat
+    </button>
+  </div>
+
   <!-- Messages -->
   <div class="chat-messages" id="messages">
     <!-- Welcome screen (shown when no messages) -->
     <div class="welcome" id="welcome">
-      <div class="welcome-icon">🦆🦞</div>
+      <div class="welcome-icon">🦆🤖</div>
       <div class="welcome-title">DuckClaw is ready</div>
       <div class="welcome-sub">
         Your secure AI assistant. Everything you need — with your permission, every time.
@@ -326,7 +335,7 @@
 
 {% block scripts %}
 <script>
-  const sessionId = 'dashboard-' + Math.random().toString(36).slice(2, 9);
+  let sessionId = 'dashboard-' + Math.random().toString(36).slice(2, 9);
   let ws = null;
   let pendingActionId = null;
   let messageCount = 0;
@@ -510,6 +519,28 @@
       sendMessage();
     }
   });
+
+  // ── New Conversation ───────────────────────────────────────────────────────
+  function newConversation() {
+    // Generate a fresh session ID
+    sessionId = 'dashboard-' + Math.random().toString(36).slice(2, 9);
+
+    // Remove all rendered messages (keep welcome + thinking nodes)
+    const messages = document.getElementById('messages');
+    const toRemove = messages.querySelectorAll('.message');
+    toRemove.forEach(el => el.remove());
+
+    // Show the welcome screen again
+    document.getElementById('welcome').style.display = '';
+    showThinking(false);
+    messageCount = 0;
+
+    // Clear input
+    const inp = document.getElementById('chatInput');
+    inp.value = '';
+    inp.style.height = 'auto';
+    inp.focus();
+  }
 
   // ── Init ───────────────────────────────────────────────────────────────────
   connectWS();

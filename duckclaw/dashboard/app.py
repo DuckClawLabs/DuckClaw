@@ -7,6 +7,7 @@ WebSocket: /ws/chat (real-time streaming)
 import json
 import logging
 import asyncio
+import collections
 from typing import Optional
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,6 +29,46 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Global orchestrator (initialized on startup)
 _orchestrator: Optional[Orchestrator] = None
 
+# ── In-memory log ring buffer ─────────────────────────────────────────────────
+# Keeps the last 500 log records in memory so /api/logs can serve them.
+_LOG_BUFFER: collections.deque = collections.deque(maxlen=500)
+
+
+class _BufferHandler(logging.Handler):
+    """Appends formatted log records to _LOG_BUFFER."""
+
+    LEVEL_MAP = {
+        logging.DEBUG:    "debug",
+        logging.INFO:     "info",
+        logging.WARNING:  "warning",
+        logging.ERROR:    "error",
+        logging.CRITICAL: "critical",
+    }
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            _LOG_BUFFER.append({
+                "time":    self.formatTime(record, "%H:%M:%S"),
+                "level":   self.LEVEL_MAP.get(record.levelno, "info"),
+                "logger":  record.name,
+                "message": self.format(record),
+            })
+        except Exception:
+            pass
+
+
+def _install_log_buffer(min_level: int = logging.DEBUG):
+    """Attach the ring-buffer handler to the duckclaw root logger once."""
+    root = logging.getLogger("duckclaw")
+    for h in root.handlers:
+        if isinstance(h, _BufferHandler):
+            return  # already installed
+    handler = _BufferHandler()
+    handler.setLevel(min_level)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root.addHandler(handler)
+    root.setLevel(min_level)
+
 
 def get_orchestrator() -> Orchestrator:
     if _orchestrator is None:
@@ -39,6 +80,7 @@ def get_orchestrator() -> Orchestrator:
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     global _orchestrator
+    _install_log_buffer()
     config = load_config()
     _orchestrator = Orchestrator(config)
     await _orchestrator.initialize()
@@ -204,6 +246,23 @@ def create_app() -> FastAPI:
         orc = get_orchestrator()
         skills = orc.skills.list_skills() if orc.skills else []
         return JSONResponse({"skills": skills})
+
+    @app.get("/api/logs")
+    async def api_logs(level: Optional[str] = None, logger_filter: Optional[str] = None, limit: int = 200):
+        """Return recent log entries from the in-memory ring buffer.
+
+        Query params:
+          level         — filter by level: debug | info | warning | error | critical
+          logger_filter — substring match on logger name (e.g. "screen_capture")
+          limit         — max entries to return (default 200, max 500)
+        """
+        entries = list(_LOG_BUFFER)
+        if level:
+            entries = [e for e in entries if e["level"] == level.lower()]
+        if logger_filter:
+            entries = [e for e in entries if logger_filter.lower() in e["logger"].lower()]
+        limit = min(limit, 500)
+        return JSONResponse({"logs": entries[-limit:], "total": len(entries)})
 
     # ── WebSocket Chat (Real-time) ─────────────────────────────────────────────
 

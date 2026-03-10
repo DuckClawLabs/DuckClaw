@@ -85,7 +85,7 @@ class TelegramBridge(BaseBridge):
             return
 
         await update.message.reply_text(
-            "🦆🦞 *DuckClaw* is ready!\n\n"
+            "🦆🤖 *DuckClaw* is ready!\n\n"
             "I'm your secure personal AI assistant.\n"
             "Every sensitive action requires your approval.\n\n"
             "*Commands:*\n"
@@ -98,7 +98,7 @@ class TelegramBridge(BaseBridge):
 
     async def _handle_help(self, update, context):
         await update.message.reply_text(
-            "🦆 *DuckClaw Commands*\n\n"
+            "🦆🤖 *DuckClaw Commands*\n\n"
             "/start — Welcome message\n"
             "/memory — Your stored facts\n"
             "/audit — Recent action log\n\n"
