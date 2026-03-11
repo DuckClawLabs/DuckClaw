@@ -6,6 +6,8 @@ Usage: duckclaw start | chat | setup | status
 import sys
 import os
 import asyncio
+import logging
+from logging.handlers import RotatingFileHandler
 import click
 import questionary
 from rich.console import Console
@@ -41,9 +43,32 @@ def check_config_exists() -> bool:
 
 @click.group()
 @click.version_option(version="0.1.1", prog_name="DuckClaw")
-def main():
+@click.option("--verbose", "-v", is_flag=True, help="Show real-time logs (all modules)")
+def main(verbose):
     """🦆🤖 DuckClaw — Secure personal AI assistant."""
-    pass
+    log_dir = os.path.expanduser("~/.duckclaw")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "duckclaw.log")
+
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)-8s] %(name)s — %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    # Always write DEBUG+ to file (rotating, max 5 MB × 3 backups)
+    fh = RotatingFileHandler(log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(fmt)
+    root.addHandler(fh)
+
+    # Console: DEBUG if -v, else WARNING
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG if verbose else logging.WARNING)
+    ch.setFormatter(fmt)
+    root.addHandler(ch)
 
 
 @main.command()
@@ -93,13 +118,39 @@ def start(host, port, no_browser, debug):
 @click.option("--model", default=None, help="Override model for this session")
 def chat(model):
     """Start a terminal chat session with DuckClaw."""
+    # Silence all console output during interactive chat — logs go to file only.
+    # Third-party libs (litellm, httpx, chromadb) add their own stream handlers;
+    # suppress them so they don't bleed into the chat UI.
+    _root = logging.getLogger()
+    for _h in list(_root.handlers):
+        if isinstance(_h, logging.StreamHandler) and not isinstance(_h, RotatingFileHandler):
+            _root.removeHandler(_h)
+    for _noisy in ("httpx", "httpcore", "litellm", "LiteLLM", "chromadb", "urllib3", "asyncio"):
+        logging.getLogger(_noisy).setLevel(logging.CRITICAL)
+
     print_banner()
 
     if not check_config_exists():
         console.print("[red]No config found. Run [bold]duckclaw setup[/bold] first.[/red]")
         sys.exit(1)
 
-    console.print("[bold green]💬 DuckClaw Chat[/bold green] [dim](type 'exit' to quit · 'new' for new conversation · 'clear' to reset screen)[/dim]\n")
+    # Install log buffer BEFORE the chat loop starts so no early messages are missed.
+    # lifespan() also calls this but runs asynchronously after uvicorn starts — too late.
+    from duckclaw.dashboard.app import install_log_buffer
+    install_log_buffer()
+
+    # Start dashboard server in background so the web UI is available while chatting
+    import threading
+    def _start_dashboard():
+        import uvicorn
+        from duckclaw.dashboard.app import create_app
+        uvicorn.run(create_app(), host="127.0.0.1", port=8741, log_level="warning")
+
+    _dash_thread = threading.Thread(target=_start_dashboard, daemon=True, name="duckclaw-dashboard")
+    _dash_thread.start()
+    console.print("[dim]Dashboard → http://127.0.0.1:8741[/dim]\n")
+
+    console.print("[bold green]💬 DuckClaw Chat[/bold green] [dim](type '/exit' to quit · '/new' for new conversation · '/clear' to reset screen)[/dim]\n")
 
     async def _chat_loop():
         from duckclaw.core.config import load_config
@@ -127,15 +178,16 @@ def chat(model):
 
             if not user_input:
                 continue
-            if user_input.lower() == "exit":
+            if user_input.lower() == "/exit":
                 console.print("[dim]Goodbye! 👋[/dim]")
                 break
-            if user_input.lower() == "clear":
+            if user_input.lower() == "/clear":
                 console.clear()
                 print_banner()
                 continue
-            if user_input.lower() == "new":
+            if user_input.lower() == "/new":
                 session_id = _new_session_id()
+                print_banner()
                 console.print(f"\n[bold green]✦ New conversation started[/bold green] [dim](session {session_id})[/dim]\n")
                 continue
 
@@ -146,8 +198,7 @@ def chat(model):
                     source="terminal",
                 )
 
-            console.print(f"[bold yellow]DuckClaw:[/bold yellow]")
-            console.print(f"  {response['reply']}\n")
+            console.print(f"[bold yellow]DuckClaw:[/bold yellow] {response['reply']}\n")
 
             # Show permission notifications if any
             for note in response.get("notifications", []):
@@ -299,6 +350,10 @@ def _setup_import():
     default_dest = os.path.expanduser("~/.duckclaw/duckclaw.yaml")
     save_to = questionary.text("Save to:", default=default_dest).ask() or default_dest
     save_to = os.path.expanduser(save_to)
+
+    if os.path.abspath(config_path) == os.path.abspath(save_to):
+        console.print("[red]✗ Source and destination are the same file. Choose a different path.[/red]")
+        return
 
     os.makedirs(os.path.dirname(save_to), exist_ok=True)
     import shutil

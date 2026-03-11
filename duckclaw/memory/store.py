@@ -1,12 +1,13 @@
 """
 DuckClaw Memory System.
 Two-layer storage:
-  1. SQLite — structured facts (user preferences, key info)
-  2. ChromaDB — semantic vector search over conversation history
+  1. SQLite — conversation history + ingested file records
+  2. ChromaDB — facts (semantic search) + conversation vectors + ingested doc chunks
 """
 
 import os
 import json
+import uuid
 import asyncio
 import logging
 import sqlite3
@@ -22,20 +23,17 @@ from duckclaw.core.config import MemoryConfig
 logger = logging.getLogger(__name__)
 
 
-FACTS_SCHEMA = """
-CREATE TABLE IF NOT EXISTS facts (
+INGESTED_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ingested_files (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    fact        TEXT NOT NULL,
-    category    TEXT NOT NULL DEFAULT 'general',
-    confidence  REAL NOT NULL DEFAULT 1.0,
-    source_msg  TEXT,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    filename    TEXT NOT NULL,
+    size_bytes  INTEGER NOT NULL DEFAULT 0,
+    chunk_count INTEGER NOT NULL DEFAULT 0,
+    ingested_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-
-CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
-CREATE INDEX IF NOT EXISTS idx_facts_created ON facts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ingested_at ON ingested_files(ingested_at DESC);
 """
+
 
 CONVERSATIONS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
@@ -71,6 +69,8 @@ class MemoryStore:
         self._db: Optional[sqlite3.Connection] = None
         self._chroma: Optional[chromadb.ClientAPI] = None
         self._collection = None
+        self._ingested_collection = None
+        self._facts_collection = None
 
     async def initialize(self):
         """Initialize databases. Call once at startup."""
@@ -84,8 +84,8 @@ class MemoryStore:
         # SQLite
         self._db = sqlite3.connect(db_path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
-        self._db.executescript(FACTS_SCHEMA)
         self._db.executescript(CONVERSATIONS_SCHEMA)
+        self._db.executescript(INGESTED_SCHEMA)
         self._db.commit()
 
         # ChromaDB (embedded — no server needed)
@@ -98,6 +98,14 @@ class MemoryStore:
                 name="duckclaw_conversations",
                 metadata={"hnsw:space": "cosine"},
             )
+            self._ingested_collection = self._chroma.get_or_create_collection(
+                name="duckclaw_ingested",
+                metadata={"hnsw:space": "cosine"},
+            )
+            self._facts_collection = self._chroma.get_or_create_collection(
+                name="duckclaw_facts",
+                metadata={"hnsw:space": "cosine"},
+            )
             logger.info("ChromaDB initialized for semantic memory")
         except Exception as e:
             logger.warning(f"ChromaDB unavailable ({e}). Falling back to SQLite-only search.")
@@ -106,7 +114,7 @@ class MemoryStore:
 
         logger.info(f"Memory store initialized at {db_path}")
 
-    # ─── Facts ────────────────────────────────────────────────────────────────
+    # ─── Facts (ChromaDB only) ────────────────────────────────────────────────
 
     def save_fact(
         self,
@@ -114,64 +122,151 @@ class MemoryStore:
         category: str = "general",
         confidence: float = 1.0,
         source_msg: Optional[str] = None,
-    ) -> int:
-        """Store a structured fact about the user. Returns fact ID."""
-        cursor = self._db.execute(
-            "INSERT INTO facts (fact, category, confidence, source_msg) VALUES (?, ?, ?, ?)",
-            (fact, category, confidence, source_msg),
+    ) -> str:
+        """Store a fact in ChromaDB. Returns the fact ID (string)."""
+        if self._facts_collection is None:
+            raise RuntimeError("ChromaDB unavailable — cannot store facts")
+        fact_id = f"fact_{uuid.uuid4().hex}"
+        self._facts_collection.add(
+            ids=[fact_id],
+            documents=[fact],
+            metadatas=[{
+                "category": category,
+                "confidence": confidence,
+                "source_msg": source_msg or "",
+                "created_at": datetime.now().isoformat(),
+            }],
         )
-        self._db.commit()
-        return cursor.lastrowid
+        return fact_id
 
     def list_facts(self, category: Optional[str] = None, limit: int = 100) -> list[dict]:
-        """List stored facts, optionally filtered by category."""
-        if category:
-            rows = self._db.execute(
-                "SELECT * FROM facts WHERE category = ? ORDER BY created_at DESC LIMIT ?",
-                (category, limit),
-            ).fetchall()
-        else:
-            rows = self._db.execute(
-                "SELECT * FROM facts ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+        """List facts from ChromaDB, optionally filtered by category."""
+        if self._facts_collection is None:
+            return []
+        try:
+            kwargs = {"where": {"category": category}} if category else {}
+            result = self._facts_collection.get(**kwargs)
+            rows = [
+                {
+                    "id": id_,
+                    "fact": doc,
+                    "category": meta.get("category", "general"),
+                    "confidence": meta.get("confidence", 1.0),
+                    "source_msg": meta.get("source_msg", ""),
+                    "created_at": meta.get("created_at", ""),
+                }
+                for id_, doc, meta in zip(result["ids"], result["documents"], result["metadatas"])
+            ]
+            rows.sort(key=lambda r: r["created_at"], reverse=True)
+            return rows[:limit]
+        except Exception as e:
+            logger.warning(f"ChromaDB list_facts failed: {e}")
+            return []
 
-    def delete_fact(self, fact_id: int) -> bool:
-        """User can delete any fact from the dashboard."""
-        cursor = self._db.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
-        self._db.commit()
-        return cursor.rowcount > 0
+    def delete_fact(self, fact_id: str) -> bool:
+        """Delete a fact from ChromaDB by ID."""
+        if self._facts_collection is None:
+            return False
+        try:
+            self._facts_collection.delete(ids=[fact_id])
+            return True
+        except Exception as e:
+            logger.warning(f"ChromaDB fact delete failed: {e}")
+            return False
 
-    def update_fact(self, fact_id: int, new_text: str) -> bool:
-        """Update an existing fact."""
-        cursor = self._db.execute(
-            "UPDATE facts SET fact = ?, updated_at = datetime('now') WHERE id = ?",
-            (new_text, fact_id),
+    def update_fact(self, fact_id: str, new_text: str) -> bool:
+        """Update fact text in ChromaDB (preserves metadata)."""
+        if self._facts_collection is None:
+            return False
+        try:
+            existing = self._facts_collection.get(ids=[fact_id])
+            if not existing["ids"]:
+                return False
+            meta = {**existing["metadatas"][0], "updated_at": datetime.now().isoformat()}
+            self._facts_collection.delete(ids=[fact_id])
+            self._facts_collection.add(ids=[fact_id], documents=[new_text], metadatas=[meta])
+            return True
+        except Exception as e:
+            logger.warning(f"ChromaDB fact update failed: {e}")
+            return False
+
+    def search_facts(self, query: str, n_results: int = 10) -> list[dict]:
+        """Semantic search over facts — returns only facts relevant to the query."""
+        if self._facts_collection is None:
+            return []
+        try:
+            count = self._facts_collection.count()
+            if count == 0:
+                return []
+            results = self._facts_collection.query(
+                query_texts=[query],
+                n_results=min(n_results, count),
+            )
+            docs = results.get("documents", [[]])[0]
+            metas = results.get("metadatas", [[]])[0]
+            return [
+                {
+                    "fact": doc,
+                    "category": meta.get("category", "general"),
+                    "confidence": meta.get("confidence", 1.0),
+                }
+                for doc, meta in zip(docs, metas)
+            ]
+        except Exception as e:
+            logger.warning(f"ChromaDB fact search failed: {e}")
+            return []
+
+    # ─── Knowledge Base (user-ingested documents) ─────────────────────────────
+
+    @staticmethod
+    def _chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list[str]:
+        chunks = []
+        start = 0
+        while start < len(text):
+            chunks.append(text[start:start + chunk_size])
+            start += chunk_size - overlap
+        return chunks or [text]
+
+    def ingest_document(self, filename: str, content: str, size_bytes: int) -> int:
+        """Chunk text and store in ChromaDB ingested collection. Returns chunk count."""
+        if self._ingested_collection is None:
+            raise RuntimeError("ChromaDB unavailable — cannot ingest documents")
+        chunks = self._chunk_text(content)
+        ts = datetime.now().isoformat()
+        ids, docs, metas = [], [], []
+        for i, chunk in enumerate(chunks):
+            ids.append(f"ingest_{filename}_{ts}_{i}")
+            docs.append(chunk)
+            metas.append({"filename": filename, "chunk_index": i, "ingested_at": ts})
+        self._ingested_collection.add(ids=ids, documents=docs, metadatas=metas)
+        self._db.execute(
+            "INSERT INTO ingested_files (filename, size_bytes, chunk_count) VALUES (?, ?, ?)",
+            (filename, size_bytes, len(chunks)),
         )
         self._db.commit()
-        return cursor.rowcount > 0
+        return len(chunks)
 
-    def get_facts_summary(self) -> str:
-        """Build a compact facts summary for injecting into LLM context."""
-        facts = self.list_facts(limit=50)
-        if not facts:
-            return ""
+    def list_ingested_files(self) -> list[dict]:
+        rows = self._db.execute(
+            "SELECT * FROM ingested_files ORDER BY ingested_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
-        by_category: dict[str, list[str]] = {}
-        for f in facts:
-            cat = f["category"]
-            if cat not in by_category:
-                by_category[cat] = []
-            by_category[cat].append(f["fact"])
-
-        lines = ["## What I know about you:"]
-        for cat, items in by_category.items():
-            lines.append(f"\n**{cat.capitalize()}:**")
-            for item in items[:10]:  # Cap per category
-                lines.append(f"- {item}")
-
-        return "\n".join(lines)
+    def delete_ingested_file(self, file_id: int) -> bool:
+        row = self._db.execute(
+            "SELECT filename FROM ingested_files WHERE id = ?", (file_id,)
+        ).fetchone()
+        if not row:
+            return False
+        filename = row["filename"]
+        if self._ingested_collection is not None:
+            try:
+                self._ingested_collection.delete(where={"filename": filename})
+            except Exception as e:
+                logger.warning(f"ChromaDB delete failed for {filename}: {e}")
+        self._db.execute("DELETE FROM ingested_files WHERE id = ?", (file_id,))
+        self._db.commit()
+        return True
 
     # ─── Conversations ────────────────────────────────────────────────────────
 
@@ -245,6 +340,38 @@ class MemoryStore:
         ).fetchall()
         return [r["content"] for r in rows]
 
+    def list_conversations(
+        self,
+        session_id: Optional[str] = None,
+        role: Optional[str] = None,
+        source: Optional[str] = None,
+        q: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> list[dict]:
+        """List conversation rows with optional filters."""
+        conditions = []
+        params: list = []
+        if session_id:
+            conditions.append("session_id = ?")
+            params.append(session_id)
+        if role:
+            conditions.append("role = ?")
+            params.append(role)
+        if source:
+            conditions.append("source = ?")
+            params.append(source)
+        if q:
+            conditions.append("lower(content) LIKE ?")
+            params.append(f"%{q.lower()}%")
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([limit, offset])
+        rows = self._db.execute(
+            f"SELECT * FROM conversations {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params,
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def get_all_sessions(self) -> list[dict]:
         """List all conversation sessions (for dashboard)."""
         rows = self._db.execute(
@@ -255,13 +382,18 @@ class MemoryStore:
 
     def get_stats(self) -> dict:
         """Memory stats for dashboard."""
-        fact_count = self._db.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
         msg_count = self._db.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
         session_count = self._db.execute(
             "SELECT COUNT(DISTINCT session_id) FROM conversations"
         ).fetchone()[0]
 
+        fact_count = 0
         chroma_count = 0
+        if self._facts_collection is not None:
+            try:
+                fact_count = self._facts_collection.count()
+            except Exception:
+                pass
         if self._collection is not None:
             try:
                 chroma_count = self._collection.count()

@@ -40,7 +40,6 @@ class ScreenCaptureSkill(BaseSkill):
         self._llm = llm_router
 
     async def execute(self, action: str, params: dict) -> SkillResult:
-        logger.info("[screen_capture] execute action=%s params=%s", action, {k: v for k, v in params.items() if k != "image_base64"})
         dispatch = {
             "capture":          self._capture,
             "capture_analyze":  self._capture_and_analyze,
@@ -48,18 +47,13 @@ class ScreenCaptureSkill(BaseSkill):
         }
         handler = dispatch.get(action)
         if not handler:
-            logger.warning("[screen_capture] unknown action: %s", action)
             return SkillResult(success=False, error=f"Unknown action: {action}")
-        result = await handler(params)
-        logger.info("[screen_capture] action=%s success=%s", action, result.success)
-        return result
+        return await handler(params)
 
     async def _capture(self, params: dict) -> SkillResult:
         """Capture a screenshot. Always requires ASK approval."""
         monitor = int(params.get("monitor", 0))
         region = params.get("region", None)  # {"top": y, "left": x, "width": w, "height": h}
-
-        logger.info("[screen_capture] requesting ASK-tier approval — monitor=%d region=%s", monitor, region or "full screen")
 
         # ASK tier — user must approve every capture
         approved = await self._check(
@@ -73,19 +67,14 @@ class ScreenCaptureSkill(BaseSkill):
             risk_level="low",
         )
         if not approved:
-            logger.info("[screen_capture] capture DENIED by user")
             return SkillResult(success=False, error="Screenshot denied by user.")
 
-        logger.info("[screen_capture] capture APPROVED — proceeding")
         return await self._do_capture(monitor, region)
 
     async def _capture_and_analyze(self, params: dict) -> SkillResult:
         """Capture screenshot and immediately analyze with LLM vision."""
         monitor = int(params.get("monitor", 0))
         question = params.get("question", "What's on the screen?")
-
-        logger.info("[screen_capture] capture_analyze — monitor=%d question=%r", monitor, question)
-        logger.info("[screen_capture] requesting ASK-tier approval for capture_analyze")
 
         approved = await self._check(
             "screen_capture",
@@ -95,27 +84,16 @@ class ScreenCaptureSkill(BaseSkill):
             risk_level="low",
         )
         if not approved:
-            logger.info("[screen_capture] capture_analyze DENIED by user")
             return SkillResult(success=False, error="Screenshot denied by user.")
-
-        logger.info("[screen_capture] capture_analyze APPROVED — capturing")
 
         # Capture
         capture_result = await self._do_capture(monitor, None)
         if not capture_result.success:
-            logger.warning("[screen_capture] capture step failed: %s", capture_result.error)
             return capture_result
 
         b64 = capture_result.metadata.get("image_base64")
-        if not b64:
-            logger.warning("[screen_capture] no image data in capture result — returning without analysis")
+        if not b64 or not self._llm:
             return capture_result
-        if not self._llm:
-            logger.warning("[screen_capture] no LLM router attached — returning image without analysis")
-            return capture_result
-
-        logger.info("[screen_capture] sending image to LLM vision (%dKB) question=%r",
-                    len(b64) // 1024, question)
 
         # Send to LLM vision
         try:
@@ -136,7 +114,6 @@ class ScreenCaptureSkill(BaseSkill):
                 ],
             )
 
-            logger.info("[screen_capture] LLM vision response received (%d chars)", len(response or ""))
             return SkillResult(
                 success=True,
                 data=response,
@@ -150,7 +127,7 @@ class ScreenCaptureSkill(BaseSkill):
             )
 
         except Exception as e:
-            logger.warning("[screen_capture] vision analysis failed: %s", e, exc_info=True)
+            logger.warning(f"Vision analysis failed: {e}")
             # Return image even if analysis fails
             return SkillResult(
                 success=True,
@@ -160,7 +137,6 @@ class ScreenCaptureSkill(BaseSkill):
 
     async def _list_monitors(self, params: dict) -> SkillResult:
         """List available monitors. Tier: SAFE — no capture, just info."""
-        logger.debug("[screen_capture] listing monitors")
         try:
             import mss
             with mss.mss() as sct:
@@ -174,60 +150,45 @@ class ScreenCaptureSkill(BaseSkill):
                     }
                     for i, m in enumerate(sct.monitors)
                 ]
-            logger.info("[screen_capture] found %d monitor(s): %s",
-                        len(monitors), [(m["id"], f"{m['width']}x{m['height']}") for m in monitors])
             return SkillResult(success=True, data=monitors)
         except ImportError:
-            logger.error("[screen_capture] mss not installed")
             return SkillResult(success=False, error="mss not installed. Run: pip install mss")
         except Exception as e:
-            logger.error("[screen_capture] list_monitors failed: %s", e, exc_info=True)
             return SkillResult(success=False, error=str(e))
 
     async def _do_capture(self, monitor: int = 0, region=None) -> SkillResult:
         """Internal: perform the actual screenshot capture."""
-        logger.debug("[screen_capture] _do_capture monitor=%d region=%s", monitor, region)
         try:
             import mss
             from PIL import Image
 
             with mss.mss() as sct:
                 if region:
-                    logger.debug("[screen_capture] grabbing region %s", region)
                     shot = sct.grab(region)
                 else:
                     monitors = sct.monitors
                     if monitor >= len(monitors):
-                        logger.error("[screen_capture] monitor %d not found (available: 0-%d)", monitor, len(monitors) - 1)
                         return SkillResult(success=False, error=f"Monitor {monitor} not found")
-                    logger.debug("[screen_capture] grabbing monitor %d (%dx%d)",
-                                 monitor, monitors[monitor]["width"], monitors[monitor]["height"])
                     shot = sct.grab(monitors[monitor])
 
                 # Convert to PIL for compression
                 img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
                 w, h = img.size
-                logger.debug("[screen_capture] raw image size %dx%d", w, h)
 
                 # Compress to JPEG, keep under 5MB for LLM
                 buf = io.BytesIO()
                 quality = 85
                 img.save(buf, format="JPEG", quality=quality)
-                raw_size = buf.tell()
-
-                if raw_size > 4_000_000:
-                    logger.info("[screen_capture] image too large (%dKB) — resizing to 1920x1080 at quality=75", raw_size // 1024)
+                if buf.tell() > 4_000_000:
                     buf = io.BytesIO()
                     img.thumbnail((1920, 1080))
                     img.save(buf, format="JPEG", quality=75)
 
                 b64 = base64.b64encode(buf.getvalue()).decode()
-                final_kb = len(b64) // 1024
 
-            logger.info("[screen_capture] capture SUCCESS — %dx%d px, %dKB (base64)", w, h, final_kb)
             return SkillResult(
                 success=True,
-                data=f"Screenshot captured ({w}×{h} px, {final_kb}KB)",
+                data=f"Screenshot captured ({w}×{h} px, {len(b64)//1024}KB)",
                 action_taken="Screenshot taken",
                 metadata={
                     "image_base64": b64,
@@ -239,11 +200,10 @@ class ScreenCaptureSkill(BaseSkill):
 
         except ImportError as e:
             missing = "mss" if "mss" in str(e) else "Pillow"
-            logger.error("[screen_capture] missing dependency: %s", missing)
             return SkillResult(
                 success=False,
                 error=f"{missing} not installed. Run: pip install mss Pillow",
             )
         except Exception as e:
-            logger.error("[screen_capture] capture failed: %s", e, exc_info=True)
+            logger.error(f"Screenshot capture failed: {e}")
             return SkillResult(success=False, error=f"Capture failed: {e}")

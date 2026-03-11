@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .filter-bar input, .filter-bar select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 12px;
+    padding: 6px 10px;
+    outline: none;
+    font-family: inherit;
+  }
+
+  .filter-bar input:focus, .filter-bar select:focus {
+    border-color: var(--accent);
+  }
+
+  .filter-bar input[type="search"] { flex: 1; min-width: 180px; }
+  .filter-bar input[type="time"]   { width: 110px; color-scheme: dark; }
+
+  .level-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .level-btn {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: var(--surface2);
+    color: var(--text-muted);
+    transition: all 0.12s;
+  }
+  .level-btn:hover        { color: var(--text); border-color: var(--border2); }
+  .level-btn.active       { border-color: currentColor; }
+  .level-btn.lvl-all      { color: var(--text-dim); }
+  .level-btn.lvl-debug    { color: #64748b; }
+  .level-btn.lvl-info     { color: #3b82f6; }
+  .level-btn.lvl-warning  { color: #f59e0b; }
+  .level-btn.lvl-error    { color: #ef4444; }
+  .level-btn.lvl-critical { color: #dc2626; }
+
+  .source-toggle {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .source-toggle button {
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    cursor: pointer;
+    transition: all 0.12s;
+    font-family: inherit;
+  }
+  .source-toggle button.active {
+    background: var(--accent);
+    color: #09090b;
+  }
+  .source-toggle button:not(.active):hover {
+    background: rgba(255,255,255,0.05);
+    color: var(--text);
+  }
+
+  .log-table-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: var(--font-mono);
+  }
+
+  .log-table th {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .log-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    vertical-align: top;
+    line-height: 1.4;
+  }
+
+  .log-table tr:last-child td { border-bottom: none; }
+  .log-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .log-table tr.row-debug    td { color: #475569; }
+  .log-table tr.row-info     td { color: var(--text-dim); }
+  .log-table tr.row-warning  td { color: #ca8a04; }
+  .log-table tr.row-error    td { color: #ef4444; }
+  .log-table tr.row-critical td { color: #dc2626; background: rgba(220,38,38,0.06); }
+
+  .lvl-badge {
+    display: inline-block;
+    width: 54px;
+    text-align: center;
+    padding: 1px 0;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .lvl-debug    { background: rgba(100,116,139,0.15); color: #64748b; }
+  .lvl-info     { background: rgba(59,130,246,0.12);  color: #3b82f6; }
+  .lvl-warning  { background: rgba(245,158,11,0.12);  color: #f59e0b; }
+  .lvl-error    { background: rgba(239,68,68,0.12);   color: #ef4444; }
+  .lvl-critical { background: rgba(220,38,38,0.2);    color: #fca5a5; }
+
+  .msg-cell { color: inherit; word-break: break-word; max-width: 600px; }
+  .logger-cell { color: #475569; font-size: 10px; white-space: nowrap; }
+  .time-cell { color: #475569; font-size: 10px; white-space: nowrap; }
+
+  .auto-refresh-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+  .auto-refresh-label input { accent-color: var(--accent); }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+  }
+  .empty-state .icon { font-size: 36px; margin-bottom: 12px; }
+  .empty-state .msg  { font-size: 13px; }
+  .empty-state .sub  { font-size: 11px; margin-top: 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <span class="page-title">🪵 Logs</span>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <label class="auto-refresh-label">
+      <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> Auto-refresh 3s
+    </label>
+    <button class="btn btn-ghost" onclick="loadLogs()" style="font-size:11px;">↻ Refresh</button>
+    <button class="btn btn-ghost" onclick="clearDisplay()" style="font-size:11px;">✕ Clear</button>
+  </div>
+</div>
+
+<div class="page-content">
+
+  <!-- Stats row -->
+  <div class="stat-grid" id="statsGrid" style="grid-template-columns:repeat(6,1fr);margin-bottom:16px;">
+    <div class="stat-card"><div class="stat-value text-dim" id="s-total">—</div><div class="stat-label">Total</div></div>
+    <div class="stat-card"><div class="stat-value" id="s-debug" style="color:#475569">—</div><div class="stat-label">Debug</div></div>
+    <div class="stat-card"><div class="stat-value text-accent" id="s-info" style="color:#3b82f6">—</div><div class="stat-label">Info</div></div>
+    <div class="stat-card"><div class="stat-value" id="s-warning" style="color:#f59e0b">—</div><div class="stat-label">Warning</div></div>
+    <div class="stat-card"><div class="stat-value text-red" id="s-error">—</div><div class="stat-label">Error</div></div>
+    <div class="stat-card"><div class="stat-value text-red" id="s-critical" style="color:#dc2626">—</div><div class="stat-label">Critical</div></div>
+  </div>
+
+  <!-- Source toggle -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+    <div class="source-toggle">
+      <button id="src-file"   onclick="setSource('file')">📄 File (persistent)</button>
+    </div>
+    <span id="filePathLabel" style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);display:none;"></span>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-bar">
+    <input type="search" id="q" placeholder="Search message or logger…" oninput="debounce()" />
+    <input type="search" id="loggerFilter" placeholder="Logger filter (e.g. orchestrator)" oninput="debounce()" style="width:200px;" />
+    <input type="time" id="startTime" step="1" oninput="debounce()" title="Start time" />
+    <span style="color:var(--text-muted);font-size:11px;">→</span>
+    <input type="time" id="endTime" step="1" oninput="debounce()" title="End time" />
+    <button class="btn btn-ghost" onclick="clearFilters()" style="font-size:11px;">✕ Clear filters</button>
+  </div>
+
+  <!-- Level buttons -->
+  <div class="level-btns" style="margin-bottom:14px;">
+    <button class="level-btn lvl-all active" onclick="setLevel('', this)">All</button>
+    <button class="level-btn lvl-debug"    onclick="setLevel('debug', this)">Debug</button>
+    <button class="level-btn lvl-info"     onclick="setLevel('info', this)">Info</button>
+    <button class="level-btn lvl-warning"  onclick="setLevel('warning', this)">Warning</button>
+    <button class="level-btn lvl-error"    onclick="setLevel('error', this)">Error</button>
+    <button class="level-btn lvl-critical" onclick="setLevel('critical', this)">Critical</button>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <span id="resultCount"></span>
+    <span id="lastUpdated"></span>
+  </div>
+
+  <!-- Log table -->
+  <div class="log-table-wrap">
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th style="width:70px;">Time</th>
+          <th style="width:64px;">Level</th>
+          <th style="width:180px;">Logger</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody id="logBody">
+        <tr><td colspan="4" class="empty-state"><div class="icon">🪵</div><div class="msg">Loading logs…</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let _level  = '';
+  let _source = 'buffer';
+  let _timer  = null;
+  let _arTimer = null;
+
+  function setSource(src) {
+    _source = src;
+    document.getElementById('src-buffer').classList.toggle('active', src === 'buffer');
+    document.getElementById('src-file').classList.toggle('active', src === 'file');
+    document.getElementById('filePathLabel').style.display = src === 'file' ? '' : 'none';
+    loadLogs();
+  }
+
+  function setLevel(lvl, btn) {
+    _level = lvl;
+    document.querySelectorAll('.level-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadLogs();
+  }
+
+  function debounce() {
+    clearTimeout(_timer);
+    _timer = setTimeout(loadLogs, 280);
+  }
+
+  function clearFilters() {
+    document.getElementById('q').value = '';
+    document.getElementById('loggerFilter').value = '';
+    document.getElementById('startTime').value = '';
+    document.getElementById('endTime').value = '';
+    loadLogs();
+  }
+
+  function clearDisplay() {
+    document.getElementById('logBody').innerHTML =
+      `<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-muted);">Display cleared — click Refresh to reload.</td></tr>`;
+    document.getElementById('resultCount').textContent = '';
+  }
+
+  function toggleAutoRefresh() {
+    clearInterval(_arTimer);
+    if (document.getElementById('autoRefresh').checked) {
+      _arTimer = setInterval(loadLogs, 3000);
+    }
+  }
+
+  async function loadLogs() {
+    const q           = document.getElementById('q').value.trim();
+    const loggerFilter = document.getElementById('loggerFilter').value.trim();
+    const startTime   = document.getElementById('startTime').value;
+    const endTime     = document.getElementById('endTime').value;
+
+    const endpoint = _source === 'file' ? '/api/logs/file' : '/api/logs';
+    const params   = new URLSearchParams({ limit: 500 });
+    if (_level)      params.set('level', _level);
+    if (q)           params.set('q', q);
+    if (loggerFilter) params.set('logger_filter', loggerFilter);
+    if (startTime)   params.set('start_time', startTime);
+    if (endTime)     params.set('end_time', endTime);
+
+    let data;
+    try {
+      const res = await fetch(`${endpoint}?${params}`);
+      data = await res.json();
+    } catch (err) {
+      document.getElementById('logBody').innerHTML =
+        `<tr><td colspan="4" style="color:var(--red);padding:16px;">Failed to fetch logs: ${err}</td></tr>`;
+      return;
+    }
+
+    if (data.file) {
+      document.getElementById('filePathLabel').textContent = data.file;
+    }
+
+    // Update stats from full unfiltered counts
+    updateStats(data.logs);
+
+    const tbody = document.getElementById('logBody');
+    const logs  = data.logs;
+
+    document.getElementById('resultCount').textContent =
+      `${logs.length} of ${data.total} entries`;
+    document.getElementById('lastUpdated').textContent =
+      `Updated ${new Date().toLocaleTimeString()}`;
+
+    if (!logs.length) {
+      tbody.innerHTML = `
+        <tr><td colspan="4">
+          <div class="empty-state">
+            <div class="icon">🔍</div>
+            <div class="msg">No log entries match your filters.</div>
+            <div class="sub">Try clearing filters or switching source.</div>
+          </div>
+        </td></tr>`;
+      return;
+    }
+
+    // Render rows (newest first)
+    tbody.innerHTML = [...logs].reverse().map(e => {
+      const lvl  = e.level || 'info';
+      const msg  = escHtml(e.message);
+      const lggr = escHtml(e.logger);
+      return `<tr class="row-${lvl}">
+        <td class="time-cell">${e.time}</td>
+        <td><span class="lvl-badge lvl-${lvl}">${lvl}</span></td>
+        <td class="logger-cell" title="${lggr}">${lggr}</td>
+        <td class="msg-cell">${msg}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function updateStats(logs) {
+    const counts = { debug: 0, info: 0, warning: 0, error: 0, critical: 0 };
+    logs.forEach(e => { if (counts[e.level] !== undefined) counts[e.level]++; });
+    document.getElementById('s-total').textContent   = logs.length;
+    document.getElementById('s-debug').textContent   = counts.debug;
+    document.getElementById('s-info').textContent    = counts.info;
+    document.getElementById('s-warning').textContent = counts.warning;
+    document.getElementById('s-error').textContent   = counts.error;
+    document.getElementById('s-critical').textContent = counts.critical;
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Initial load
+  loadLogs();
+</script>
+{% endblock %}

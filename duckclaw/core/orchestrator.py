@@ -108,15 +108,18 @@ class Orchestrator:
         if self._initialized:
             return
 
+        # Initialize memory and permissions with shared DB path for audit trail
         self.memory = MemoryStore(self.config.memory)
         await self.memory.initialize()
 
+        # Permissions engine uses same DB to log all user approvals and denials for audit trail
         db_path = self.config.memory.db_path_expanded
         self.permissions = PermissionEngine(
             config=self.config.permissions,
             db_path=db_path,
         )
 
+        # Skills registry with permission engine for checks
         self.skills = SkillRegistry(self.permissions)
 
         # Wire LLM router into vision-capable skills (screen_capture, camera)
@@ -125,6 +128,7 @@ class Orchestrator:
         except Exception:
             pass
 
+        # Mark as initialized to prevent re-initialization on subsequent calls
         self._initialized = True
         logger.info("DuckClaw Orchestrator initialized")
 
@@ -138,17 +142,29 @@ class Orchestrator:
         """
         Process a user message and return a response.
         """
+        # Ensure subsystems are initialized (in case chat is called before start)
         if not self._initialized:
             await self.initialize()
 
+        # Generate a new session ID if not provided (for first message in a conversation)
         session_id = session_id or str(uuid.uuid4())
+        # Log the incoming message to memory immediately (even before processing) for a complete audit trail
         injection_warnings = []
+        # skill_used will be populated if the LLM decides to call a skill during this interaction
         skill_used = None
 
-        # 1. Build context
+        # 1. Scan incoming message for prompt injection before building context
+        if self.config.security.prompt_injection_defense:
+            input_warnings = scan_output(message, context="user_input")
+            if input_warnings:
+                injection_warnings.extend(input_warnings)
+                await self._log_injection_warnings(input_warnings, session_id, source)
+
+        # 2. Build context
+        # Context includes: system prompt + relevant facts + recent conversation history + skill list + any relevant memories retrieved via semantic search
         context = self._build_context(message, session_id)
         
-        # 2. First LLM call — may return a skill call
+        # 3. First LLM call — may return a skill call
         try:
             llm_response = await self.llm.chat(
                 messages=context["messages"],
@@ -161,14 +177,14 @@ class Orchestrator:
             self.memory.save_message(session_id, "assistant", reply, source)
             return {"reply": reply, "session_id": session_id, "notifications": [], "skill_used": None, "injection_warnings": []}
 
-        # 3. Scan first LLM response for injection signals before acting on it
+        # 4. Scan first LLM response for injection signals before acting on it
         if self.config.security.prompt_injection_defense:
             early_warnings = scan_output(llm_response, context=message[:100])
             if early_warnings:
                 injection_warnings.extend(early_warnings)
                 await self._log_injection_warnings(early_warnings, session_id, source)
 
-        # 4. Check if LLM wants to call a skill
+        # 5. Check if LLM wants to call a skill
         skill_call = _parse_skill_call(llm_response)
 
         if skill_call:
@@ -183,7 +199,7 @@ class Orchestrator:
                 skill_name, action, params, session_id=session_id
             )
 
-            # 5. Feed skill result back to LLM for final natural-language answer.
+            # 6. Feed skill result back to LLM for final natural-language answer.
             #    Results from web skills are UNTRUSTED external data — wrap in
             #    security fence so the LLM cannot be manipulated by web content.
             _WEB_SKILLS = {"web_search", "web_browser"}
@@ -226,18 +242,18 @@ class Orchestrator:
         else:
             reply = llm_response
 
-        # 6. Scan final reply for injection signals (second pass)
+        # 7. Scan final reply for injection signals (second pass)
         if self.config.security.prompt_injection_defense:
             final_warnings = scan_output(reply, context=message[:100])
             if final_warnings:
                 injection_warnings.extend(final_warnings)
                 await self._log_injection_warnings(final_warnings, session_id, source)
 
-        # 7. Save turns to memory
+        # 8. Save turns to memory
         self.memory.save_message(session_id, "user", message, source)
         self.memory.save_message(session_id, "assistant", reply, source)
 
-        # 8. Extract facts in background
+        # 9. Extract facts in background
         asyncio.create_task(self._extract_facts_background(message, session_id))
 
         return {
@@ -249,13 +265,16 @@ class Orchestrator:
         }
 
     def _build_context(self, message: str, session_id: str) -> dict:
-        facts_summary = self.memory.get_facts_summary()
+        relevant_facts = self.memory.search_facts(message, n_results=10)
         relevant_memories = self.memory.search_memory(message, n_results=3)
         skills_context = self.skills.get_skills_context() if self.skills else ""
 
         system_parts = [SYSTEM_PROMPT]
-        if facts_summary:
-            system_parts.append(f"\n{facts_summary}")
+        if relevant_facts:
+            lines = ["## What I know about you (relevant to this message):"]
+            for f in relevant_facts:
+                lines.append(f"- [{f['category']}] {f['fact']}")
+            system_parts.append("\n" + "\n".join(lines))
         if relevant_memories:
             system_parts.append("\n## Relevant past context:")
             for mem in relevant_memories:
@@ -271,10 +290,10 @@ class Orchestrator:
                 user_message=message,
                 conversation_history=history,
             )
-            return {"system_prompt": SYSTEM_PROMPT, "messages": messages}
+            return {"system_prompt": system_prompt, "messages": messages}
         else:
             return {
-                "system_prompt": SYSTEM_PROMPT,
+                "system_prompt": system_prompt,
                 "messages": history + [{"role": "user", "content": message}],
             }
 

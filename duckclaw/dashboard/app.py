@@ -12,7 +12,8 @@ from typing import Optional
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File
+from typing import List as TypingList
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -57,7 +58,7 @@ class _BufferHandler(logging.Handler):
             pass
 
 
-def _install_log_buffer(min_level: int = logging.DEBUG):
+def install_log_buffer(min_level: int = logging.DEBUG):
     """Attach the ring-buffer handler to the duckclaw root logger once."""
     root = logging.getLogger("duckclaw")
     for h in root.handlers:
@@ -80,7 +81,7 @@ def get_orchestrator() -> Orchestrator:
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
     global _orchestrator
-    _install_log_buffer()
+    install_log_buffer()
     config = load_config()
     _orchestrator = Orchestrator(config)
     await _orchestrator.initialize()
@@ -140,6 +141,25 @@ def create_app() -> FastAPI:
             "stats": stats,
         })
 
+    @app.get("/logs", response_class=HTMLResponse)
+    async def dashboard_logs(request: Request):
+        return templates.TemplateResponse("logs.html", {
+            "request": request,
+            "page": "logs",
+            "title": "Logs — DuckClaw",
+        })
+
+    @app.get("/database", response_class=HTMLResponse)
+    async def dashboard_database(request: Request):
+        orc = get_orchestrator()
+        stats = orc.memory.get_stats()
+        return templates.TemplateResponse("database.html", {
+            "request": request,
+            "page": "database",
+            "title": "Database — DuckClaw",
+            "stats": stats,
+        })
+
     @app.get("/settings", response_class=HTMLResponse)
     async def dashboard_settings(request: Request):
         config = load_config()
@@ -183,12 +203,101 @@ def create_app() -> FastAPI:
         return JSONResponse({"facts": facts})
 
     @app.delete("/api/memory/facts/{fact_id}")
-    async def api_delete_fact(fact_id: int):
+    async def api_delete_fact(fact_id: str):
         orc = get_orchestrator()
         deleted = orc.memory.delete_fact(fact_id)
         if not deleted:
             raise HTTPException(404, f"Fact {fact_id} not found")
         return JSONResponse({"deleted": fact_id})
+
+    @app.get("/api/db/facts")
+    async def api_db_facts(
+        category: Optional[str] = None,
+        q: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ):
+        orc = get_orchestrator()
+        facts = orc.memory.list_facts(category=category, limit=limit)
+        if q:
+            q_lower = q.lower()
+            facts = [f for f in facts if q_lower in f["fact"].lower()]
+        total = len(facts)
+        return JSONResponse({"facts": facts[offset:offset + limit], "total": total})
+
+    @app.get("/api/db/conversations")
+    async def api_db_conversations(
+        session_id: Optional[str] = None,
+        role: Optional[str] = None,
+        source: Optional[str] = None,
+        q: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ):
+        orc = get_orchestrator()
+        rows = orc.memory.list_conversations(
+            session_id=session_id,
+            role=role,
+            source=source,
+            q=q,
+            limit=limit,
+            offset=offset,
+        )
+        return JSONResponse({"conversations": rows, "total": len(rows)})
+
+    _MAX_FILES = 10
+    _MAX_TOTAL_BYTES = 10 * 1024 * 1024  # 10 MB
+    _ALLOWED_EXTENSIONS = {
+        ".txt", ".md", ".py", ".js", ".ts", ".json", ".yaml", ".yml",
+        ".toml", ".csv", ".html", ".css", ".rst", ".xml", ".sh", ".log", ".sql",
+    }
+
+    @app.post("/api/db/ingest")
+    async def api_ingest_files(files: TypingList[UploadFile] = File(...)):
+        if len(files) > _MAX_FILES:
+            raise HTTPException(400, f"Max {_MAX_FILES} files per upload")
+
+        results = []
+        total_bytes = 0
+
+        for f in files:
+            suffix = Path(f.filename or "").suffix.lower()
+            if suffix not in _ALLOWED_EXTENSIONS:
+                raise HTTPException(400, f"Unsupported file type: {suffix or '(none)'}. Allowed: {', '.join(sorted(_ALLOWED_EXTENSIONS))}")
+
+            raw = await f.read()
+            total_bytes += len(raw)
+            if total_bytes > _MAX_TOTAL_BYTES:
+                raise HTTPException(400, "Total upload size exceeds 10 MB limit")
+
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                raise HTTPException(400, f"{f.filename}: file is not valid UTF-8 text")
+
+            orc = get_orchestrator()
+            chunks = orc.memory.ingest_document(
+                filename=f.filename or "unnamed",
+                content=content,
+                size_bytes=len(raw),
+            )
+            results.append({"filename": f.filename, "size_bytes": len(raw), "chunks": chunks})
+
+        return JSONResponse({"ingested": results})
+
+    @app.get("/api/db/ingested")
+    async def api_list_ingested():
+        orc = get_orchestrator()
+        files = orc.memory.list_ingested_files()
+        return JSONResponse({"files": files})
+
+    @app.delete("/api/db/ingested/{file_id}")
+    async def api_delete_ingested(file_id: int):
+        orc = get_orchestrator()
+        deleted = orc.memory.delete_ingested_file(file_id)
+        if not deleted:
+            raise HTTPException(404, f"Ingested file {file_id} not found")
+        return JSONResponse({"deleted": file_id})
 
     @app.get("/api/audit")
     async def api_audit_log(
@@ -302,12 +411,22 @@ def create_app() -> FastAPI:
         return JSONResponse({"skills": skills})
 
     @app.get("/api/logs")
-    async def api_logs(level: Optional[str] = None, logger_filter: Optional[str] = None, limit: int = 200):
+    async def api_logs(
+        level: Optional[str] = None,
+        logger_filter: Optional[str] = None,
+        q: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        limit: int = 200,
+    ):
         """Return recent log entries from the in-memory ring buffer.
 
         Query params:
           level         — filter by level: debug | info | warning | error | critical
-          logger_filter — substring match on logger name (e.g. "screen_capture")
+          logger_filter — substring match on logger name (e.g. "orchestrator")
+          q             — full-text search across message + logger
+          start_time    — HH:MM:SS lower bound (inclusive)
+          end_time      — HH:MM:SS upper bound (inclusive)
           limit         — max entries to return (default 200, max 500)
         """
         entries = list(_LOG_BUFFER)
@@ -315,8 +434,87 @@ def create_app() -> FastAPI:
             entries = [e for e in entries if e["level"] == level.lower()]
         if logger_filter:
             entries = [e for e in entries if logger_filter.lower() in e["logger"].lower()]
+        if q:
+            q_lower = q.lower()
+            entries = [e for e in entries if q_lower in e["message"].lower() or q_lower in e["logger"].lower()]
+        if start_time:
+            entries = [e for e in entries if e["time"] >= start_time]
+        if end_time:
+            entries = [e for e in entries if e["time"] <= end_time]
         limit = min(limit, 500)
         return JSONResponse({"logs": entries[-limit:], "total": len(entries)})
+
+    @app.get("/api/logs/file")
+    async def api_logs_file(
+        level: Optional[str] = None,
+        logger_filter: Optional[str] = None,
+        q: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ):
+        """Return log entries parsed from ~/.duckclaw/duckclaw.log.
+
+        Survives restarts — reads the actual log file on disk.
+        Same filter params as /api/logs plus offset for pagination.
+        """
+        import re
+        log_path = Path.home() / ".duckclaw" / "duckclaw.log"
+        if not log_path.exists():
+            return JSONResponse({"logs": [], "total": 0, "source": "file", "file": str(log_path)})
+
+        # Format: HH:MM:SS [LEVEL   ] logger.name — message
+        _LINE_RE = re.compile(
+            r"^(\d{2}:\d{2}:\d{2}) \[([\w ]+)\] ([\w.\-]+) \u2014 (.*)$"
+        )
+        LEVEL_MAP = {
+            "DEBUG":    "debug",
+            "INFO":     "info",
+            "WARNING":  "warning",
+            "ERROR":    "error",
+            "CRITICAL": "critical",
+        }
+
+        entries = []
+        try:
+            with open(log_path, encoding="utf-8", errors="replace") as f:
+                for raw_line in f:
+                    line = raw_line.rstrip()
+                    m = _LINE_RE.match(line)
+                    if not m:
+                        # continuation line — append to last entry's message
+                        if entries:
+                            entries[-1]["message"] += " " + line.strip()
+                        continue
+                    time_str, lvl_raw, log_name, msg = m.groups()
+                    entries.append({
+                        "time":    time_str,
+                        "level":   LEVEL_MAP.get(lvl_raw.strip(), lvl_raw.strip().lower()),
+                        "logger":  log_name,
+                        "message": msg,
+                    })
+        except OSError as exc:
+            raise HTTPException(500, f"Cannot read log file: {exc}")
+
+        # Apply filters
+        if level:
+            entries = [e for e in entries if e["level"] == level.lower()]
+        if logger_filter:
+            entries = [e for e in entries if logger_filter.lower() in e["logger"].lower()]
+        if q:
+            q_lower = q.lower()
+            entries = [e for e in entries if q_lower in e["message"].lower() or q_lower in e["logger"].lower()]
+        if start_time:
+            entries = [e for e in entries if e["time"] >= start_time]
+        if end_time:
+            entries = [e for e in entries if e["time"] <= end_time]
+
+        total = len(entries)
+        limit = min(limit, 2000)
+        # Return most-recent entries (last N after offset from end)
+        sliced = entries[-(limit + offset):][:limit] if offset == 0 else entries[-(limit + offset):-offset]
+        return JSONResponse({"logs": sliced, "total": total, "source": "file", "file": str(log_path)})
 
     # ── WebSocket Chat (Real-time) ─────────────────────────────────────────────
 

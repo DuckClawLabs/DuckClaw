@@ -1,123 +1,6 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="page-header">
-  <span class="page-title">⚙️ Settings</span>
-</div>
-
-<div class="page-content">
-  <div id="settings-banner" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:var(--radius);font-size:12px;"></div>
-
-  <form id="settings-form">
-
-    <!-- LLM Settings -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🤖 AI Model</div>
-      <table style="font-size:12px;width:100%;">
-        <tr>
-          <td style="color:var(--text-muted);width:180px;padding:6px 0;">Primary model</td>
-          <td>
-            <input name="llm.model" type="text" value="{{ config.llm.model }}" list="model-suggestions" style="width:260px;" />
-            <div style="margin-top:4px;font-size:10px;color:var(--text-dim);line-height:1.5;">
-              LiteLLM format · prefix with <code style="background:var(--surface2);padding:1px 4px;border-radius:3px;">groq/</code>,
-              <code style="background:var(--surface2);padding:1px 4px;border-radius:3px;">gemini/</code>, or
-              <code style="background:var(--surface2);padding:1px 4px;border-radius:3px;">ollama/</code> for non-Claude and OpenAI models
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-muted);padding:6px 0;">Max tokens</td>
-          <td><input name="llm.max_tokens" type="number" min="256" max="32768" value="{{ config.llm.max_tokens }}" style="width:100px;" /></td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-muted);padding:6px 0;">Temperature</td>
-          <td><input name="llm.temperature" type="number" min="0" max="2" step="0.05" value="{{ config.llm.temperature }}" style="width:80px;" /></td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-muted);padding:6px 0;">Cost tracking</td>
-          <td><input name="llm.cost_tracking" type="checkbox" {% if config.llm.cost_tracking %}checked{% endif %} /></td>
-        </tr>
-      </table>
-    </div>
-
-    <!-- Permission Settings -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🛡️ Permissions</div>
-      <table style="font-size:12px;width:100%;">
-        <tr>
-          <td style="color:var(--text-muted);width:180px;padding:6px 0;">Default tier</td>
-          <td>
-            <select name="permissions.default_tier">
-              {% for tier in ["safe", "notify", "ask", "block"] %}
-              <option value="{{ tier }}" {% if config.permissions.default_tier == tier %}selected{% endif %}>{{ tier }}</option>
-              {% endfor %}
-            </select>
-          </td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-muted);padding:6px 0;">Audit log</td>
-          <td><input name="permissions.audit_log" type="checkbox" {% if config.permissions.audit_log %}checked{% endif %} /></td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-muted);padding:6px 0;">Notify on safe</td>
-          <td><input name="permissions.notify_on_safe" type="checkbox" {% if config.permissions.notify_on_safe %}checked{% endif %} /></td>
-        </tr>
-      </table>
-    </div>
-
-    <!-- Security Settings -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🔒 Security</div>
-      <table style="font-size:12px;width:100%;">
-        <tr>
-          <td style="color:var(--text-muted);width:180px;padding:6px 0;">Prompt injection defense</td>
-          <td><input name="security.prompt_injection_defense" type="checkbox" {% if config.security.prompt_injection_defense %}checked{% endif %} /></td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-muted);padding:6px 0;">Context isolation</td>
-          <td><input name="security.context_isolation" type="checkbox" {% if config.security.context_isolation %}checked{% endif %} /></td>
-        </tr>
-      </table>
-    </div>
-
-    <!-- Dashboard Settings -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🖥️ Dashboard</div>
-      <table style="font-size:12px;width:100%;">
-        <tr>
-          <td style="color:var(--text-muted);width:180px;padding:6px 0;">Port</td>
-          <td><input name="dashboard.port" type="number" min="1024" max="65535" value="{{ config.dashboard.port }}" style="width:100px;" /></td>
-        </tr>
-      </table>
-    </div>
-
-    <!-- Memory (read-only paths) -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🧠 Memory</div>
-      <table style="font-size:12px;">
-        <tr>
-          <td style="color:var(--text-muted);width:180px;">Database</td>
-          <td class="mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.db_path }}</td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-muted);">Vector index</td>
-          <td class="mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.chroma_path }}</td>
-        </tr>
-        <tr>
-          <td style="color:var(--text-muted);">Max facts</td>
-          <td class="mono">{{ config.memory.max_facts }}</td>
-        </tr>
-      </table>
-    </div>
-
-    <button type="submit" style="padding:8px 20px;background:var(--accent);color:#000;border:none;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;">
-      Save Settings
-    </button>
-    <span style="font-size:11px;color:var(--text-muted);margin-left:12px;">Restart DuckClaw to apply changes.</span>
-
-  </form>
-</div>
-
+{% block head %}
 <style>
   input[type="text"], input[type="number"], select {
     background: var(--surface2);
@@ -132,29 +15,399 @@
     outline: 1px solid var(--accent);
     border-color: var(--accent);
   }
-</style>
 
+  /* ── Info card tooltip ───────────────────────────────────── */
+  .info-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .info-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--text-muted);
+    font-size: 9px;
+    font-weight: 700;
+    cursor: default;
+    line-height: 1;
+    font-style: normal;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .info-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .info-tip {
+    display: none;
+    position: absolute;
+    left: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 100;
+    width: 240px;
+    background: var(--surface);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--text-dim);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    pointer-events: none;
+  }
+  .info-tip::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    transform: translateY(-50%) rotate(45deg);
+    width: 8px;
+    height: 8px;
+    background: var(--surface);
+    border-left: 1px solid var(--border2);
+    border-bottom: 1px solid var(--border2);
+  }
+  .info-tip .tip-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 5px;
+  }
+  .info-tip code {
+    background: var(--surface2);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--accent);
+  }
+  .info-wrap:hover .info-tip { display: block; }
+
+  /* keep tooltip inside viewport for last rows */
+  tr:nth-last-child(-n+2) .info-tip {
+    top: auto;
+    bottom: 0;
+    transform: none;
+  }
+  tr:nth-last-child(-n+2) .info-tip::before {
+    top: 12px;
+    transform: rotate(45deg);
+  }
+
+  .label-cell {
+    color: var(--text-muted);
+    width: 200px;
+    padding: 8px 0;
+    vertical-align: middle;
+  }
+  .input-cell { padding: 8px 0; vertical-align: middle; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <span class="page-title">⚙️ Settings</span>
+</div>
+
+<div class="page-content">
+  <div id="settings-banner" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:var(--radius);font-size:12px;"></div>
+
+  <form id="settings-form">
+
+    <!-- ── LLM Settings ──────────────────────────────────────────── -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🤖 AI Model</div>
+      <table style="font-size:12px;width:100%;border:none;">
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Primary model
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Primary model</div>
+                The AI model used for all responses. DuckClaw uses LiteLLM, so any supported provider works.
+                Prefix with <code>groq/</code>, <code>gemini/</code>, or <code>ollama/</code> for non-Claude models.
+                Example: <code>gemini/gemini-2.0-flash</code>
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <input name="llm.model" type="text" value="{{ config.llm.model }}" list="model-suggestions" style="width:260px;" />
+            <datalist id="model-suggestions">
+              <option value="claude-sonnet-4-5-20251001">
+              <option value="claude-haiku-4-5-20251001">
+              <option value="gemini/gemini-2.0-flash">
+              <option value="groq/llama3-70b-8192">
+            </datalist>
+          </td>
+        </tr>
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Max tokens
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Max tokens</div>
+                Maximum tokens the model generates per response.
+                Higher = longer answers but more API cost.
+                Range: <code>256</code> – <code>32768</code>. Recommended: <code>4096</code>.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <input name="llm.max_tokens" type="number" min="256" max="32768" value="{{ config.llm.max_tokens }}" style="width:100px;" />
+          </td>
+        </tr>
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Temperature
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Temperature</div>
+                Controls randomness. <code>0</code> = deterministic and precise.
+                <code>1–2</code> = more creative and varied.
+                Recommended: <code>0.7</code> for general chat.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <input name="llm.temperature" type="number" min="0" max="2" step="0.05" value="{{ config.llm.temperature }}" style="width:80px;" />
+          </td>
+        </tr>
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Cost tracking
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Cost tracking</div>
+                Estimates token cost for each LLM call and logs it.
+                Useful for monitoring API spend.
+                Works best with Claude and OpenAI models.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <input name="llm.cost_tracking" type="checkbox" {% if config.llm.cost_tracking %}checked{% endif %} />
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- ── Permission Settings ───────────────────────────────────── -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🛡️ Permissions</div>
+      <table style="font-size:12px;width:100%;border:none;">
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Default tier
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Default permission tier</div>
+                Fallback tier for unclassified actions.<br>
+                🟢 <code>safe</code> — silent auto-approve<br>
+                🔵 <code>notify</code> — auto-approve + notification<br>
+                🟡 <code>ask</code> — require your confirmation<br>
+                🔴 <code>block</code> — never allow
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <select name="permissions.default_tier">
+              {% for tier in ["safe", "notify", "ask", "block"] %}
+              <option value="{{ tier }}" {% if config.permissions.default_tier == tier %}selected{% endif %}>{{ tier }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Audit log
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Audit log</div>
+                Records every action DuckClaw takes — skill calls, file reads, web searches — to a persistent log.
+                Required for the Audit Log page to work.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <input name="permissions.audit_log" type="checkbox" {% if config.permissions.audit_log %}checked{% endif %} />
+          </td>
+        </tr>
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Notify on safe
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Notify on safe</div>
+                Show a notification even for SAFE-tier actions (which are normally silent).
+                Turn on for full visibility into everything DuckClaw does.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <input name="permissions.notify_on_safe" type="checkbox" {% if config.permissions.notify_on_safe %}checked{% endif %} />
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- ── Security Settings ─────────────────────────────────────── -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🔒 Security</div>
+      <table style="font-size:12px;width:100%;border:none;">
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Prompt injection defense
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Prompt injection defense</div>
+                Scans all incoming messages and LLM responses for injection patterns —
+                attempts by malicious content to override DuckClaw's instructions.
+                Strongly recommended to keep enabled.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <input name="security.prompt_injection_defense" type="checkbox" {% if config.security.prompt_injection_defense %}checked{% endif %} />
+          </td>
+        </tr>
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Context isolation
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Context isolation</div>
+                Wraps external data (web results, file contents) in a security fence so the LLM treats it as data only — not as instructions.
+                Prevents indirect prompt injection attacks.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <input name="security.context_isolation" type="checkbox" {% if config.security.context_isolation %}checked{% endif %} />
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- ── Dashboard Settings ────────────────────────────────────── -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🖥️ Dashboard</div>
+      <table style="font-size:12px;width:100%;border:none;">
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Port
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Dashboard port</div>
+                The local port where the DuckClaw dashboard is served.
+                Default: <code>8741</code>.
+                A restart is required after changing this value.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell">
+            <input name="dashboard.port" type="number" min="1024" max="65535" value="{{ config.dashboard.port }}" style="width:100px;" />
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- ── Memory (read-only) ─────────────────────────────────────── -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🧠 Memory <span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:6px;">read-only</span></div>
+      <table style="font-size:12px;border:none;">
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Database
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">SQLite database path</div>
+                Stores all user facts, conversation history, and ingested file records.
+                Editable in the Database page.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.db_path }}</td>
+        </tr>
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Vector index
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">ChromaDB vector index path</div>
+                Stores semantic embeddings of conversations and ingested documents for memory search.
+                Used when DuckClaw retrieves relevant past context.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.chroma_path }}</td>
+        </tr>
+        <tr>
+          <td class="label-cell">
+            <div class="info-wrap">
+              Max facts
+              <span class="info-btn">i</span>
+              <div class="info-tip">
+                <div class="tip-title">Max facts</div>
+                Maximum number of user facts held in memory at once.
+                Older facts are pruned when the limit is reached to keep the context window lean.
+              </div>
+            </div>
+          </td>
+          <td class="input-cell mono">{{ config.memory.max_facts }}</td>
+        </tr>
+      </table>
+    </div>
+
+    <button type="submit" style="padding:8px 20px;background:var(--accent);color:#000;border:none;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;">
+      Save Settings
+    </button>
+    <span style="font-size:11px;color:var(--text-muted);margin-left:12px;">Restart DuckClaw to apply changes.</span>
+
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script>
 document.getElementById("settings-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const form = e.target;
+  const form   = e.target;
   const banner = document.getElementById("settings-banner");
 
   const body = {
     llm: {
-      model: form["llm.model"].value.trim(),
-      max_tokens: parseInt(form["llm.max_tokens"].value),
-      temperature: parseFloat(form["llm.temperature"].value),
+      model:         form["llm.model"].value.trim(),
+      max_tokens:    parseInt(form["llm.max_tokens"].value),
+      temperature:   parseFloat(form["llm.temperature"].value),
       cost_tracking: form["llm.cost_tracking"].checked,
     },
     permissions: {
-      default_tier: form["permissions.default_tier"].value,
-      audit_log: form["permissions.audit_log"].checked,
+      default_tier:   form["permissions.default_tier"].value,
+      audit_log:      form["permissions.audit_log"].checked,
       notify_on_safe: form["permissions.notify_on_safe"].checked,
     },
     security: {
       prompt_injection_defense: form["security.prompt_injection_defense"].checked,
-      context_isolation: form["security.context_isolation"].checked,
+      context_isolation:        form["security.context_isolation"].checked,
     },
     dashboard: {
       port: parseInt(form["dashboard.port"].value),
@@ -162,11 +415,7 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
   };
 
   try {
-    const res = await fetch("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res  = await fetch("/api/settings", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
     const data = await res.json();
     if (res.ok) {
       window.location.reload();
@@ -174,11 +423,11 @@ document.getElementById("settings-form").addEventListener("submit", async (e) =>
       throw new Error(data.detail || "Save failed");
     }
   } catch (err) {
-    banner.style.display = "block";
+    banner.style.display    = "block";
     banner.style.background = "var(--surface2)";
-    banner.style.border = "1px solid #e74c3c";
-    banner.style.color = "#e74c3c";
-    banner.textContent = "✗ " + err.message;
+    banner.style.border     = "1px solid #e74c3c";
+    banner.style.color      = "#e74c3c";
+    banner.textContent      = "✗ " + err.message;
   }
 });
 </script>

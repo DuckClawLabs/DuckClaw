@@ -1,0 +1,546 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+  .db-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 4px;
+    width: fit-content;
+    margin-bottom: 20px;
+  }
+  .db-tab {
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  .db-tab.active {
+    background: var(--surface);
+    color: var(--accent);
+    border: 1px solid var(--border2);
+  }
+  .db-tab:hover:not(.active) { color: var(--text); }
+
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+  .filter-bar input, .filter-bar select {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 6px 10px;
+    outline: none;
+  }
+  .filter-bar input:focus, .filter-bar select:focus { border-color: var(--accent); }
+  .filter-bar input[type="text"] { min-width: 200px; }
+  .filter-bar select { min-width: 120px; }
+
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+  }
+  .content-cell {
+    max-width: 340px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-cell {
+    max-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+  .conf-bar { display: flex; align-items: center; gap: 6px; font-size: 11px; font-family: var(--font-mono); }
+  .conf-track { width: 48px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .conf-fill  { height: 100%; border-radius: 2px; }
+  .row-count  { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-left: auto; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .badge-user      { background: rgba(59,130,246,0.12); color: #3b82f6; }
+  .badge-assistant { background: rgba(139,92,246,0.12); color: #8b5cf6; }
+  .badge-system    { background: rgba(245,158,11,0.12); color: #f59e0b; }
+  .source-cell     { font-family: var(--font-mono); font-size: 10px; }
+
+  /* ── Knowledge Base / Ingest ─────────────────────────────── */
+  .drop-zone {
+    border: 2px dashed var(--border2);
+    border-radius: var(--radius-lg);
+    padding: 36px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 16px;
+    background: var(--surface2);
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(245,158,11,0.04);
+  }
+  .drop-zone .drop-icon { font-size: 32px; margin-bottom: 8px; }
+  .drop-zone .drop-hint { font-size: 13px; color: var(--text-dim); }
+  .drop-zone .drop-sub  { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  .ingest-queue {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  .ingest-file-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .ingest-file-row .fname { flex: 1; font-family: var(--font-mono); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ingest-file-row .fsize { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+  .ingest-file-row .fremove { cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; padding: 2px 4px; }
+  .ingest-file-row .fremove:hover { color: var(--red); }
+
+  .quota-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .quota-track { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .quota-fill  { height: 100%; border-radius: 2px; background: var(--accent); transition: width 0.2s; }
+  .quota-fill.over { background: var(--red); }
+
+  .ingest-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 28px; }
+  .ingest-status  { font-size: 12px; color: var(--text-muted); }
+  .ingest-status.ok  { color: var(--green); }
+  .ingest-status.err { color: var(--red); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <span class="page-title">🗄️ Database</span>
+  <span class="row-count" id="rowCount">—</span>
+</div>
+
+<div class="page-content">
+  <!-- Stats -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-value text-accent">{{ stats.total_facts }}</div>
+      <div class="stat-label">Facts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.total_messages }}</div>
+      <div class="stat-label">Messages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.total_sessions }}</div>
+      <div class="stat-label">Sessions</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value text-green">{{ stats.semantic_index_size }}</div>
+      <div class="stat-label">Vector Index</div>
+    </div>
+  </div>
+
+  <!-- Tab switcher -->
+  <div class="db-tabs">
+    <button class="db-tab active"  onclick="switchTab('facts')">🧠 Facts</button>
+    <button class="db-tab"         onclick="switchTab('conversations')">💬 Conversations</button>
+    <button class="db-tab"         onclick="switchTab('knowledge')">📁 Knowledge Base</button>
+  </div>
+
+  <!-- ── Facts panel ───────────────────────────────────────────── -->
+  <div class="panel active" id="panel-facts">
+    <div class="filter-bar">
+      <input type="text" id="facts-q" placeholder="Search facts…" oninput="loadFacts()">
+      <select id="facts-cat" onchange="loadFacts()">
+        <option value="">All categories</option>
+        <option value="work">Work</option>
+        <option value="personal">Personal</option>
+        <option value="preferences">Preferences</option>
+        <option value="health">Health</option>
+        <option value="calendar">Calendar</option>
+        <option value="general">General</option>
+      </select>
+      <button class="btn btn-ghost" onclick="loadFacts()">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px">ID</th>
+            <th>Fact</th>
+            <th style="width:100px">Category</th>
+            <th style="width:90px">Confidence</th>
+            <th style="width:130px">Created</th>
+            <th style="width:48px"></th>
+          </tr>
+        </thead>
+        <tbody id="facts-tbody">
+          <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Conversations panel ───────────────────────────────────── -->
+  <div class="panel" id="panel-conversations">
+    <div class="filter-bar">
+      <input type="text" id="conv-q"       placeholder="Search content…"  oninput="loadConversations()">
+      <input type="text" id="conv-session" placeholder="Session ID…"       oninput="loadConversations()">
+      <select id="conv-role"   onchange="loadConversations()">
+        <option value="">All roles</option>
+        <option value="user">User</option>
+        <option value="assistant">Assistant</option>
+      </select>
+      <select id="conv-source" onchange="loadConversations()">
+        <option value="">All sources</option>
+        <option value="terminal">Terminal</option>
+        <option value="dashboard">Dashboard</option>
+        <option value="telegram">Telegram</option>
+        <option value="discord">Discord</option>
+      </select>
+      <button class="btn btn-ghost" onclick="loadConversations()">↻ Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px">ID</th>
+            <th style="width:120px">Session</th>
+            <th style="width:80px">Role</th>
+            <th>Content</th>
+            <th style="width:80px">Source</th>
+            <th style="width:130px">Created</th>
+          </tr>
+        </thead>
+        <tbody id="conv-tbody">
+          <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Knowledge Base panel ──────────────────────────────────── -->
+  <div class="panel" id="panel-knowledge">
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+         ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <div class="drop-icon">📂</div>
+      <div class="drop-hint">Drop files here or click to browse</div>
+      <div class="drop-sub">Up to 10 files · 10 MB total · txt md py js ts json yaml csv html rst xml sh log sql</div>
+    </div>
+    <input type="file" id="fileInput" multiple accept=".txt,.md,.py,.js,.ts,.json,.yaml,.yml,.toml,.csv,.html,.css,.rst,.xml,.sh,.log,.sql" style="display:none" onchange="onFilePick(event)">
+
+    <!-- Quota bar -->
+    <div class="quota-bar-wrap" id="quotaWrap" style="display:none">
+      <span id="quotaLabel">0 / 10 MB</span>
+      <div class="quota-track"><div class="quota-fill" id="quotaFill" style="width:0%"></div></div>
+      <span id="fileCountLabel">0 / 10 files</span>
+    </div>
+
+    <!-- Queued file list -->
+    <div class="ingest-queue" id="ingestQueue"></div>
+
+    <!-- Actions -->
+    <div class="ingest-actions" id="ingestActions" style="display:none">
+      <button class="btn btn-primary" id="ingestBtn" onclick="doIngest()">⬆ Ingest into ChromaDB</button>
+      <button class="btn btn-ghost"   onclick="clearQueue()">Clear</button>
+      <span class="ingest-status" id="ingestStatus"></span>
+    </div>
+
+    <!-- Ingested files table -->
+    <div style="margin-top:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <span style="font-size:13px;font-weight:600;color:var(--text)">Ingested Documents</span>
+        <button class="btn btn-ghost" onclick="loadIngested()">↻ Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:40px">ID</th>
+              <th>Filename</th>
+              <th style="width:80px">Size</th>
+              <th style="width:70px">Chunks</th>
+              <th style="width:140px">Ingested At</th>
+              <th style="width:48px"></th>
+            </tr>
+          </thead>
+          <tbody id="ingested-tbody">
+            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Helpers ───────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/(1024*1024)).toFixed(2) + ' MB';
+}
+function catBadge(cat) {
+  const colors = { work:'badge-notify', personal:'badge-ask', preferences:'badge-safe', health:'badge-block', calendar:'badge-auto', general:'badge-auto' };
+  return `<span class="badge ${colors[cat]||'badge-auto'}">${esc(cat)}</span>`;
+}
+function roleBadge(role) {
+  const cls = role==='user' ? 'badge-user' : role==='assistant' ? 'badge-assistant' : 'badge-system';
+  return `<span class="badge ${cls}">${esc(role)}</span>`;
+}
+function confBar(conf) {
+  const pct = Math.round(conf*100);
+  const color = conf>=0.9 ? 'var(--green)' : conf>=0.7 ? 'var(--accent)' : 'var(--red)';
+  return `<div class="conf-bar"><div class="conf-track"><div class="conf-fill" style="width:${pct}%;background:${color}"></div></div><span>${pct}%</span></div>`;
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+let currentTab = 'facts';
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.db-tab').forEach((b, i) => {
+    b.classList.toggle('active', ['facts','conversations','knowledge'][i] === tab);
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`panel-${tab}`).classList.add('active');
+  if (tab === 'facts')         loadFacts();
+  else if (tab === 'conversations') loadConversations();
+  else                         loadIngested();
+}
+
+// ── Facts ─────────────────────────────────────────────────────────────────
+async function loadFacts() {
+  const q   = document.getElementById('facts-q').value.trim();
+  const cat = document.getElementById('facts-cat').value;
+  const p   = new URLSearchParams({ limit: 500 });
+  if (q)   p.set('q', q);
+  if (cat) p.set('category', cat);
+  const data = await fetch(`/api/db/facts?${p}`).then(r=>r.json());
+  document.getElementById('rowCount').textContent = `${data.total} rows`;
+  const tbody = document.getElementById('facts-tbody');
+  if (!data.facts.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">No facts found</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.facts.map(f => `<tr>
+    <td class="mono text-muted" style="font-size:11px">#${f.id}</td>
+    <td>${esc(f.fact)}</td>
+    <td>${catBadge(f.category)}</td>
+    <td>${confBar(f.confidence)}</td>
+    <td class="mono text-muted" style="font-size:10px">${esc(f.created_at)}</td>
+    <td><button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="deleteFact(${f.id},this)">✕</button></td>
+  </tr>`).join('');
+}
+async function deleteFact(id, btn) {
+  if (!confirm(`Delete fact #${id}?`)) return;
+  btn.disabled = true;
+  const res = await fetch(`/api/memory/facts/${id}`, { method:'DELETE' });
+  if (res.ok) { btn.closest('tr').remove(); }
+  else { btn.disabled = false; alert('Delete failed'); }
+}
+
+// ── Conversations ─────────────────────────────────────────────────────────
+async function loadConversations() {
+  const p = new URLSearchParams({ limit: 300 });
+  const q       = document.getElementById('conv-q').value.trim();
+  const session = document.getElementById('conv-session').value.trim();
+  const role    = document.getElementById('conv-role').value;
+  const source  = document.getElementById('conv-source').value;
+  if (q)       p.set('q', q);
+  if (session) p.set('session_id', session);
+  if (role)    p.set('role', role);
+  if (source)  p.set('source', source);
+  const data = await fetch(`/api/db/conversations?${p}`).then(r=>r.json());
+  document.getElementById('rowCount').textContent = `${data.total} rows`;
+  const tbody = document.getElementById('conv-tbody');
+  if (!data.conversations.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">No messages found</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.conversations.map(c => `<tr>
+    <td class="mono text-muted" style="font-size:11px">#${c.id}</td>
+    <td><div class="session-cell" title="${esc(c.session_id)}">${esc(c.session_id)}</div></td>
+    <td>${roleBadge(c.role)}</td>
+    <td><div class="content-cell" title="${esc(c.content)}">${esc(c.content)}</div></td>
+    <td><span class="source-cell text-muted">${esc(c.source||'—')}</span></td>
+    <td class="mono text-muted" style="font-size:10px">${esc(c.created_at)}</td>
+  </tr>`).join('');
+}
+
+// ── Knowledge Base ────────────────────────────────────────────────────────
+const MAX_FILES = 10;
+const MAX_BYTES = 10 * 1024 * 1024;
+let pendingFiles = [];   // File objects queued for upload
+
+function updateQueue() {
+  const queue   = document.getElementById('ingestQueue');
+  const wrap    = document.getElementById('quotaWrap');
+  const actions = document.getElementById('ingestActions');
+  const totalBytes = pendingFiles.reduce((s, f) => s + f.size, 0);
+  const over = totalBytes > MAX_BYTES || pendingFiles.length > MAX_FILES;
+
+  if (!pendingFiles.length) {
+    queue.innerHTML = '';
+    wrap.style.display = 'none';
+    actions.style.display = 'none';
+    return;
+  }
+
+  wrap.style.display = 'flex';
+  actions.style.display = 'flex';
+
+  const pct = Math.min(100, (totalBytes / MAX_BYTES) * 100);
+  document.getElementById('quotaFill').style.width = pct + '%';
+  document.getElementById('quotaFill').classList.toggle('over', over);
+  document.getElementById('quotaLabel').textContent = `${fmtBytes(totalBytes)} / 10 MB`;
+  document.getElementById('fileCountLabel').textContent = `${pendingFiles.length} / ${MAX_FILES} files`;
+
+  queue.innerHTML = pendingFiles.map((f, i) => `
+    <div class="ingest-file-row">
+      <span style="font-size:16px">${fileIcon(f.name)}</span>
+      <span class="fname">${esc(f.name)}</span>
+      <span class="fsize">${fmtBytes(f.size)}</span>
+      <span class="fremove" onclick="removeFile(${i})" title="Remove">✕</span>
+    </div>`).join('');
+
+  document.getElementById('ingestBtn').disabled = over;
+  if (over) {
+    document.getElementById('ingestStatus').textContent = '⚠ Exceeds limits';
+    document.getElementById('ingestStatus').className = 'ingest-status err';
+  } else {
+    document.getElementById('ingestStatus').textContent = '';
+  }
+}
+
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  const map = { py:'🐍', js:'🟨', ts:'🔷', json:'📋', md:'📝', csv:'📊', sh:'💻', html:'🌐', yaml:'⚙️', yml:'⚙️', sql:'🗃️' };
+  return map[ext] || '📄';
+}
+
+function addFiles(newFiles) {
+  const existing = new Set(pendingFiles.map(f => f.name));
+  for (const f of newFiles) {
+    if (pendingFiles.length >= MAX_FILES) break;
+    if (!existing.has(f.name)) { pendingFiles.push(f); existing.add(f.name); }
+  }
+  updateQueue();
+}
+
+function removeFile(i) { pendingFiles.splice(i, 1); updateQueue(); }
+function clearQueue()  { pendingFiles = []; updateQueue(); document.getElementById('fileInput').value = ''; }
+
+function onFilePick(e) { addFiles(Array.from(e.target.files)); }
+
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.add('drag-over');
+}
+function onDragLeave(e) {
+  document.getElementById('dropZone').classList.remove('drag-over');
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('drag-over');
+  addFiles(Array.from(e.dataTransfer.files));
+}
+
+async function doIngest() {
+  if (!pendingFiles.length) return;
+  const btn    = document.getElementById('ingestBtn');
+  const status = document.getElementById('ingestStatus');
+  btn.disabled = true;
+  status.textContent = 'Uploading…';
+  status.className = 'ingest-status';
+
+  const form = new FormData();
+  pendingFiles.forEach(f => form.append('files', f));
+
+  try {
+    const res  = await fetch('/api/db/ingest', { method:'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) {
+      status.textContent = '✕ ' + (data.detail || 'Upload failed');
+      status.className = 'ingest-status err';
+      btn.disabled = false;
+      return;
+    }
+    const total = data.ingested.reduce((s, r) => s + r.chunks, 0);
+    status.textContent = `✓ ${data.ingested.length} file(s) ingested — ${total} chunks added`;
+    status.className = 'ingest-status ok';
+    clearQueue();
+    loadIngested();
+  } catch(err) {
+    status.textContent = '✕ Network error';
+    status.className = 'ingest-status err';
+    btn.disabled = false;
+  }
+}
+
+async function loadIngested() {
+  const data  = await fetch('/api/db/ingested').then(r=>r.json());
+  const tbody = document.getElementById('ingested-tbody');
+  if (!data.files.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">No documents ingested yet</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.files.map(f => `<tr>
+    <td class="mono text-muted" style="font-size:11px">#${f.id}</td>
+    <td><span style="margin-right:6px">${fileIcon(f.filename)}</span>${esc(f.filename)}</td>
+    <td class="mono text-muted" style="font-size:11px">${fmtBytes(f.size_bytes)}</td>
+    <td class="mono text-accent" style="font-size:11px">${f.chunk_count}</td>
+    <td class="mono text-muted" style="font-size:10px">${esc(f.ingested_at)}</td>
+    <td><button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="deleteIngested(${f.id},this)">✕</button></td>
+  </tr>`).join('');
+}
+
+async function deleteIngested(id, btn) {
+  if (!confirm(`Remove ingested file #${id} from ChromaDB?`)) return;
+  btn.disabled = true;
+  const res = await fetch(`/api/db/ingested/${id}`, { method:'DELETE' });
+  if (res.ok) { btn.closest('tr').remove(); }
+  else { btn.disabled = false; alert('Delete failed'); }
+}
+
+// Initial load
+loadFacts();
+loadIngested();
+</script>
+{% endblock %}

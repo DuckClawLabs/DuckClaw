@@ -300,7 +300,7 @@ class PermissionEngine:
                 None,
                 lambda: input("Approve? [y/N]: ").strip().lower()
             )
-            return answer in ("y", "yes")
+            return answer in ("y", "yes", 1, "1", "true", "t")
         except (EOFError, KeyboardInterrupt):
             return False
 
