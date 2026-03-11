@@ -94,7 +94,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="DuckClaw",
         description="Secure personal AI assistant",
-        version="0.1.0",
+        version="0.1.1",
         lifespan=lifespan,
     )
 

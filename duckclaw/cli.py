@@ -40,7 +40,7 @@ def check_config_exists() -> bool:
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="DuckClaw")
+@click.version_option(version="0.1.1", prog_name="DuckClaw")
 def main():
     """🦆🤖 DuckClaw — Secure personal AI assistant."""
     pass

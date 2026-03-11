@@ -1,0 +1,2 @@
+recursive-include duckclaw/dashboard/templates *.html
+recursive-include duckclaw/dashboard/static *.css *.js *.png *.svg
