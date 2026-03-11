@@ -6,6 +6,7 @@
 llm:
   # Primary model (LiteLLM format)
   # Claude:  claude-haiku-4-5-20251001 / claude-sonnet-4-20250514
+  # Groq:    groq/llama-3.3-70b-versatile  (ultra-fast, free tier)
   # Gemini:  gemini/gemini-2.0-flash  (free tier)
   # GPT:     gpt-4o-mini / gpt-4o
   # Local:   ollama/gemma3:1b          (if Ollama installed)
@@ -59,5 +60,6 @@ security:
 # Store keys in ~/.duckclaw/.env (chmod 600), NOT here.
 # .env format:
 #   ANTHROPIC_API_KEY=sk-ant-...
+#   GROQ_API_KEY=gsk_...
 #   GEMINI_API_KEY=AIza...
 #   OPENAI_API_KEY=sk-...

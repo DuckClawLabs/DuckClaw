@@ -16,7 +16,14 @@
       <table style="font-size:12px;width:100%;">
         <tr>
           <td style="color:var(--text-muted);width:180px;padding:6px 0;">Primary model</td>
-          <td><input name="llm.model" type="text" value="{{ config.llm.model }}" style="width:260px;" /></td>
+          <td>
+            <input name="llm.model" type="text" value="{{ config.llm.model }}" list="model-suggestions" style="width:260px;" />
+            <div style="margin-top:4px;font-size:10px;color:var(--text-dim);line-height:1.5;">
+              LiteLLM format · prefix with <code style="background:var(--surface2);padding:1px 4px;border-radius:3px;">groq/</code>,
+              <code style="background:var(--surface2);padding:1px 4px;border-radius:3px;">gemini/</code>, or
+              <code style="background:var(--surface2);padding:1px 4px;border-radius:3px;">ollama/</code> for non-Claude and OpenAI models
+            </div>
+          </td>
         </tr>
         <tr>
           <td style="color:var(--text-muted);padding:6px 0;">Max tokens</td>

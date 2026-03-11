@@ -321,39 +321,54 @@ def _setup_browser():
         "Choose your AI model:",
         choices=[
             questionary.Choice("Claude (Anthropic) — Recommended", value="claude"),
+            questionary.Choice("Groq — Ultra-fast inference, free tier", value="groq"),
             questionary.Choice("Gemini Flash (Google) — Free", value="gemini"),
-            questionary.Choice("Custom model string", value="custom"),
-        ]
+            questionary.Choice("Ollama — Local inference, no API key", value="ollama")        ]
     ).ask()
 
     if model_choice is None:
         console.print("[red]Cancelled.[/red]")
         return
 
-    model_map = {"claude": "claude-haiku-4-5-20251001", "gemini": "gemini/gemini-2.0-flash"}
-    env_var = ""
-    api_key = ""
+    env_entries: dict = {}
 
-    if model_choice == "custom":
-        model_name = questionary.text("Enter your model string (e.g. ollama/llama3:latest):").ask() or ""
-    else:
-        model_name = model_map[model_choice]
-
-    if model_choice == "claude":
+    if model_choice == "ollama":
+        model_name = questionary.text(
+            "Ollama model string:", default="ollama/gemma3:1b"
+        ).ask() or "ollama/gemma3:1b"
+        console.print("[dim]Make sure Ollama is running: ollama serve[/dim]")
+    elif model_choice == "claude":
+        model_name = questionary.text(
+            "Claude model string:", default="claude-haiku-4-5-20251001"
+        ).ask() or "claude-haiku-4-5-20251001"
         api_key = questionary.password("Anthropic API key:").ask() or ""
-        env_var = "ANTHROPIC_API_KEY"
+        if api_key:
+            env_entries["ANTHROPIC_API_KEY"] = api_key
+    elif model_choice == "groq":
+        model_name = questionary.text(
+            "Groq model string:", default="groq/llama-3.3-70b-versatile"
+        ).ask() or "groq/llama-3.3-70b-versatile"
+        console.print("[dim]Get a free key at: https://console.groq.com/keys[/dim]")
+        api_key = questionary.password("Groq API key:").ask() or ""
+        if api_key:
+            env_entries["GROQ_API_KEY"] = api_key
     elif model_choice == "gemini":
+        model_name = questionary.text(
+            "Gemini model string:", default="gemini/gemini-2.0-flash"
+        ).ask() or "gemini/gemini-2.0-flash"
         api_key = questionary.password("Google AI Studio API key:").ask() or ""
-        env_var = "GEMINI_API_KEY"
+        if api_key:
+            env_entries["GEMINI_API_KEY"] = api_key
 
     config_dir = os.path.expanduser("~/.duckclaw")
     os.makedirs(config_dir, exist_ok=True)
     config_path = _write_config(config_dir, model_name, "8741", True)
 
-    if env_var and api_key:
+    if env_entries:
         env_path = os.path.join(config_dir, ".env")
         with open(env_path, "w") as f:
-            f.write(f"{env_var}={api_key}\n")
+            for k, v in env_entries.items():
+                f.write(f"{k}={v}\n")
         os.chmod(env_path, 0o600)
 
     console.print(f"\n[green]✓[/green] Config saved to [bold]{config_path}[/bold]")
@@ -381,8 +396,9 @@ def _setup_cli_wizard():
         "Which AI model do you want to use?",
         choices=[
             questionary.Choice("Claude (Anthropic) — Recommended, powerful", value="claude"),
+            questionary.Choice("Groq — Ultra-fast inference, free tier", value="groq"),
             questionary.Choice("Gemini Flash (Google) — Free tier, no cost", value="gemini"),
-            questionary.Choice("Custom model string", value="custom"),
+            questionary.Choice("Ollama — Local inference, no API key", value="ollama"),
         ]
     ).ask()
 
@@ -390,31 +406,38 @@ def _setup_cli_wizard():
         console.print("[red]Setup cancelled.[/red]")
         return
 
-    model_map = {
-        "claude": "claude-haiku-4-5-20251001",
-        "gemini": "gemini/gemini-2.0-flash",
-    }
+    # Step 2: Credentials
+    console.print("\n[bold cyan]Step 2/3 — Credentials[/bold cyan]")
+    env_entries: dict = {}
 
-    if model_choice == "custom":
+    if model_choice == "ollama":
         model_name = questionary.text(
-            "Enter your model string (e.g. ollama/llama3:latest, gpt-4o-mini):"
-        ).ask() or ""
-    else:
-        model_name = model_map[model_choice]
-
-    # Step 2: API Key
-    console.print("\n[bold cyan]Step 2/3 — API Key[/bold cyan]")
-    env_var = ""
-    api_key = ""
-    if model_choice == "claude":
+            "Ollama model string:", default="ollama/gemma3:1b"
+        ).ask() or "ollama/gemma3:1b"
+        console.print("[dim]Make sure Ollama is running: ollama serve[/dim]")
+    elif model_choice == "claude":
+        model_name = questionary.text(
+            "Claude model string:", default="claude-haiku-4-5-20251001"
+        ).ask() or "claude-haiku-4-5-20251001"
         api_key = questionary.password("Enter your Anthropic API key:").ask() or ""
-        env_var = "ANTHROPIC_API_KEY"
+        if api_key:
+            env_entries["ANTHROPIC_API_KEY"] = api_key
+    elif model_choice == "groq":
+        model_name = questionary.text(
+            "Groq model string:", default="groq/llama-3.3-70b-versatile"
+        ).ask() or "groq/llama-3.3-70b-versatile"
+        console.print("[dim]Get a free key at: https://console.groq.com/keys[/dim]")
+        api_key = questionary.password("Enter your Groq API key:").ask() or ""
+        if api_key:
+            env_entries["GROQ_API_KEY"] = api_key
     elif model_choice == "gemini":
+        model_name = questionary.text(
+            "Gemini model string:", default="gemini/gemini-2.0-flash"
+        ).ask() or "gemini/gemini-2.0-flash"
         console.print("[dim]Get a free key at: https://aistudio.google.com/app/apikey[/dim]")
         api_key = questionary.password("Enter your Google AI Studio API key:").ask() or ""
-        env_var = "GEMINI_API_KEY"
-    else:
-        console.print("[dim]No API key needed for custom/local models.[/dim]")
+        if api_key:
+            env_entries["GEMINI_API_KEY"] = api_key
 
     # Step 3: Preferences
     console.print("\n[bold cyan]Step 3/3 — Preferences[/bold cyan]")
@@ -428,12 +451,13 @@ def _setup_cli_wizard():
     config_path = _write_config(config_dir, model_name, dashboard_port, enable_audit)
 
     completion_lines = f"[green]✓[/green] Config saved to [bold]{config_path}[/bold]\n"
-    if env_var and api_key:
+    if env_entries:
         env_path = os.path.join(config_dir, ".env")
         with open(env_path, "w") as f:
-            f.write(f"{env_var}={api_key}\n")
+            for k, v in env_entries.items():
+                f.write(f"{k}={v}\n")
         os.chmod(env_path, 0o600)
-        completion_lines += f"[green]✓[/green] API key saved to [bold]{env_path}[/bold] [dim](chmod 600)[/dim]\n"
+        completion_lines += f"[green]✓[/green] Credentials saved to [bold]{env_path}[/bold] [dim](chmod 600)[/dim]\n"
 
     console.print(Panel(
         completion_lines + f"\n[bold]Run [cyan]duckclaw start[/cyan] to launch your assistant![/bold]",
