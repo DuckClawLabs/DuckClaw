@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from duckclaw.core.config import load_config
+from duckclaw.core.config import load_config, _find_config
 from duckclaw.core.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
@@ -142,8 +142,7 @@ def create_app() -> FastAPI:
 
     @app.get("/settings", response_class=HTMLResponse)
     async def dashboard_settings(request: Request):
-        orc = get_orchestrator()
-        config = orc.config
+        config = load_config()
         return templates.TemplateResponse("settings.html", {
             "request": request,
             "page": "settings",
@@ -232,6 +231,62 @@ def create_app() -> FastAPI:
             media_type=media_type,
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
+
+    @app.post("/api/settings")
+    async def api_save_settings(request: Request):
+        """Save settings to duckclaw.yaml. Restart required to apply."""
+        import yaml
+
+        body = await request.json()
+
+        config_path = _find_config()
+        if config_path is None:
+            raise HTTPException(404, "Config file not found. Run duckclaw setup first.")
+
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+
+        # Apply changes from body — only known fields
+        if "llm" in body:
+            raw.setdefault("llm", {})
+            llm = body["llm"]
+            if "model" in llm:
+                raw["llm"]["model"] = str(llm["model"]).strip()
+            if "max_tokens" in llm:
+                raw["llm"]["max_tokens"] = int(llm["max_tokens"])
+            if "temperature" in llm:
+                raw["llm"]["temperature"] = float(llm["temperature"])
+            if "cost_tracking" in llm:
+                raw["llm"]["cost_tracking"] = bool(llm["cost_tracking"])
+
+        if "permissions" in body:
+            raw.setdefault("permissions", {})
+            perms = body["permissions"]
+            if "default_tier" in perms and perms["default_tier"] in ("safe", "notify", "ask", "block"):
+                raw["permissions"]["default_tier"] = perms["default_tier"]
+            if "audit_log" in perms:
+                raw["permissions"]["audit_log"] = bool(perms["audit_log"])
+            if "notify_on_safe" in perms:
+                raw["permissions"]["notify_on_safe"] = bool(perms["notify_on_safe"])
+
+        if "security" in body:
+            raw.setdefault("security", {})
+            sec = body["security"]
+            if "prompt_injection_defense" in sec:
+                raw["security"]["prompt_injection_defense"] = bool(sec["prompt_injection_defense"])
+            if "context_isolation" in sec:
+                raw["security"]["context_isolation"] = bool(sec["context_isolation"])
+
+        if "dashboard" in body:
+            raw.setdefault("dashboard", {})
+            dash = body["dashboard"]
+            if "port" in dash:
+                raw["dashboard"]["port"] = int(dash["port"])
+
+        with open(config_path, "w") as f:
+            yaml.dump(raw, f, default_flow_style=False, allow_unicode=True)
+        print(f"Settings saved to {config_path}")
+        return JSONResponse({"saved": True, "message": "Settings saved. Restart DuckClaw to apply."})
 
     @app.get("/api/llm/stats")
     async def api_llm_stats():

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "duckclaw"
-version = "0.1.0"
+version = "0.1.1"
 description = "Powerful AI — built for you, built with you, built securely. Local-first personal AI assistant."
 readme = "README.md"
 license = { text = "MIT" }

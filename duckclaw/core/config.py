@@ -25,7 +25,6 @@ ENV_PATHS = [
 @dataclass
 class LLMConfig:
     model: str = "claude-haiku-4-5-20251001"
-    fallback_models: list[str] = field(default_factory=lambda: ["gemini/gemini-2.0-flash"])
     cost_tracking: bool = True
     max_tokens: int = 4096
     temperature: float = 0.7
@@ -113,7 +112,6 @@ def load_config() -> DuckClawConfig:
     if llm_raw := raw.get("llm"):
         config.llm = LLMConfig(
             model=llm_raw.get("model", config.llm.model),
-            fallback_models=llm_raw.get("fallback_models", config.llm.fallback_models),
             cost_tracking=llm_raw.get("cost_tracking", config.llm.cost_tracking),
             max_tokens=llm_raw.get("max_tokens", config.llm.max_tokens),
             temperature=llm_raw.get("temperature", config.llm.temperature),

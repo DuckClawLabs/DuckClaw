@@ -48,7 +48,6 @@ class RouterStats:
     total_tokens: int = 0
     successful_calls: int = 0
     failed_calls: int = 0
-    fallback_used: int = 0
     call_log: list[LLMCallRecord] = field(default_factory=list)
 
     @property
@@ -64,7 +63,6 @@ class RouterStats:
             "total_tokens": self.total_tokens,
             "successful_calls": self.successful_calls,
             "failed_calls": self.failed_calls,
-            "fallback_used": self.fallback_used,
             "avg_cost_per_call": round(self.avg_cost_per_call, 6),
         }
 
@@ -104,29 +102,7 @@ class LLMRouter:
             full_messages.append({"role": "system", "content": system_prompt})
         full_messages.extend(messages)
 
-        # Try primary model first
-        try:
-            return await self._call(target_model, full_messages, max_tok, temp)
-        except Exception as primary_error:
-            logger.warning(f"Primary model {target_model} failed: {primary_error}")
-
-            # Try fallback models in order
-            for fallback_model in self.config.fallback_models:
-                if fallback_model == target_model:
-                    continue
-                try:
-                    logger.info(f"Trying fallback: {fallback_model}")
-                    result = await self._call(fallback_model, full_messages, max_tok, temp)
-                    self.stats.fallback_used += 1
-                    return result
-                except Exception as fallback_error:
-                    logger.warning(f"Fallback {fallback_model} also failed: {fallback_error}")
-
-            # All models failed
-            raise RuntimeError(
-                f"All models failed. Primary: {primary_error}. "
-                f"Check your API keys and network connection."
-            )
+        return await self._call(target_model, full_messages, max_tok, temp)
 
     async def _call(
         self,

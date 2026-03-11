@@ -6,112 +6,173 @@
 </div>
 
 <div class="page-content">
-  <!-- LLM Settings -->
-  <div class="card" style="margin-bottom:16px;">
-    <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">
-      🤖 AI Model
-    </div>
-    <table style="font-size:12px;">
-      <tr>
-        <td style="color:var(--text-muted);width:160px;">Primary model</td>
-        <td class="mono" style="color:var(--accent);">{{ config.llm.model }}</td>
-      </tr>
-      <tr>
-        <td style="color:var(--text-muted);">Fallback models</td>
-        <td class="mono" style="color:var(--text-dim);">
-          {{ config.llm.fallback_models | join(', ') or 'None' }}
-        </td>
-      </tr>
-      <tr>
-        <td style="color:var(--text-muted);">Max tokens</td>
-        <td class="mono">{{ config.llm.max_tokens }}</td>
-      </tr>
-      <tr>
-        <td style="color:var(--text-muted);">Temperature</td>
-        <td class="mono">{{ config.llm.temperature }}</td>
-      </tr>
-      <tr>
-        <td style="color:var(--text-muted);">Cost tracking</td>
-        <td>
-          <span class="badge {% if config.llm.cost_tracking %}badge-approved{% else %}badge-denied{% endif %}">
-            {{ 'enabled' if config.llm.cost_tracking else 'disabled' }}
-          </span>
-        </td>
-      </tr>
-    </table>
-  </div>
+  <div id="settings-banner" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:var(--radius);font-size:12px;"></div>
 
-  <!-- Permission Settings -->
-  <div class="card" style="margin-bottom:16px;">
-    <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">
-      🛡️ Permissions
-    </div>
-    <table style="font-size:12px;">
-      <tr>
-        <td style="color:var(--text-muted);width:160px;">Default tier</td>
-        <td><span class="badge badge-{{ config.permissions.default_tier }}">{{ config.permissions.default_tier }}</span></td>
-      </tr>
-      <tr>
-        <td style="color:var(--text-muted);">Audit log</td>
-        <td>
-          <span class="badge {% if config.permissions.audit_log %}badge-approved{% else %}badge-denied{% endif %}">
-            {{ 'enabled' if config.permissions.audit_log else 'disabled' }}
-          </span>
-        </td>
-      </tr>
-    </table>
-  </div>
+  <form id="settings-form">
 
-  <!-- Security Settings -->
-  <div class="card" style="margin-bottom:16px;">
-    <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">
-      🔒 Security
+    <!-- LLM Settings -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🤖 AI Model</div>
+      <table style="font-size:12px;width:100%;">
+        <tr>
+          <td style="color:var(--text-muted);width:180px;padding:6px 0;">Primary model</td>
+          <td><input name="llm.model" type="text" value="{{ config.llm.model }}" style="width:260px;" /></td>
+        </tr>
+        <tr>
+          <td style="color:var(--text-muted);padding:6px 0;">Max tokens</td>
+          <td><input name="llm.max_tokens" type="number" min="256" max="32768" value="{{ config.llm.max_tokens }}" style="width:100px;" /></td>
+        </tr>
+        <tr>
+          <td style="color:var(--text-muted);padding:6px 0;">Temperature</td>
+          <td><input name="llm.temperature" type="number" min="0" max="2" step="0.05" value="{{ config.llm.temperature }}" style="width:80px;" /></td>
+        </tr>
+        <tr>
+          <td style="color:var(--text-muted);padding:6px 0;">Cost tracking</td>
+          <td><input name="llm.cost_tracking" type="checkbox" {% if config.llm.cost_tracking %}checked{% endif %} /></td>
+        </tr>
+      </table>
     </div>
-    <table style="font-size:12px;">
-      <tr>
-        <td style="color:var(--text-muted);width:160px;">Prompt injection defense</td>
-        <td>
-          <span class="badge {% if config.security.prompt_injection_defense %}badge-approved{% else %}badge-denied{% endif %}">
-            {{ 'active' if config.security.prompt_injection_defense else 'disabled' }}
-          </span>
-        </td>
-      </tr>
-      <tr>
-        <td style="color:var(--text-muted);">Context isolation</td>
-        <td>
-          <span class="badge {% if config.security.context_isolation %}badge-approved{% else %}badge-denied{% endif %}">
-            {{ 'active' if config.security.context_isolation else 'disabled' }}
-          </span>
-        </td>
-      </tr>
-    </table>
-  </div>
 
-  <!-- Memory Settings -->
-  <div class="card" style="margin-bottom:16px;">
-    <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">
-      🧠 Memory
+    <!-- Permission Settings -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🛡️ Permissions</div>
+      <table style="font-size:12px;width:100%;">
+        <tr>
+          <td style="color:var(--text-muted);width:180px;padding:6px 0;">Default tier</td>
+          <td>
+            <select name="permissions.default_tier">
+              {% for tier in ["safe", "notify", "ask", "block"] %}
+              <option value="{{ tier }}" {% if config.permissions.default_tier == tier %}selected{% endif %}>{{ tier }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td style="color:var(--text-muted);padding:6px 0;">Audit log</td>
+          <td><input name="permissions.audit_log" type="checkbox" {% if config.permissions.audit_log %}checked{% endif %} /></td>
+        </tr>
+        <tr>
+          <td style="color:var(--text-muted);padding:6px 0;">Notify on safe</td>
+          <td><input name="permissions.notify_on_safe" type="checkbox" {% if config.permissions.notify_on_safe %}checked{% endif %} /></td>
+        </tr>
+      </table>
     </div>
-    <table style="font-size:12px;">
-      <tr>
-        <td style="color:var(--text-muted);width:160px;">Database</td>
-        <td class="mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.db_path }}</td>
-      </tr>
-      <tr>
-        <td style="color:var(--text-muted);">Vector index</td>
-        <td class="mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.chroma_path }}</td>
-      </tr>
-      <tr>
-        <td style="color:var(--text-muted);">Max facts</td>
-        <td class="mono">{{ config.memory.max_facts }}</td>
-      </tr>
-    </table>
-  </div>
 
-  <!-- Config file info -->
-  <div style="font-size:11px;color:var(--text-muted);padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);">
-    ℹ️ Edit <span class="mono" style="color:var(--text-dim);">~/.duckclaw/duckclaw.yaml</span> to change settings,
-    then restart DuckClaw. Run <span class="mono" style="color:var(--text-dim);">duckclaw setup</span> to reconfigure from scratch.
-  </div>
+    <!-- Security Settings -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🔒 Security</div>
+      <table style="font-size:12px;width:100%;">
+        <tr>
+          <td style="color:var(--text-muted);width:180px;padding:6px 0;">Prompt injection defense</td>
+          <td><input name="security.prompt_injection_defense" type="checkbox" {% if config.security.prompt_injection_defense %}checked{% endif %} /></td>
+        </tr>
+        <tr>
+          <td style="color:var(--text-muted);padding:6px 0;">Context isolation</td>
+          <td><input name="security.context_isolation" type="checkbox" {% if config.security.context_isolation %}checked{% endif %} /></td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Dashboard Settings -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🖥️ Dashboard</div>
+      <table style="font-size:12px;width:100%;">
+        <tr>
+          <td style="color:var(--text-muted);width:180px;padding:6px 0;">Port</td>
+          <td><input name="dashboard.port" type="number" min="1024" max="65535" value="{{ config.dashboard.port }}" style="width:100px;" /></td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Memory (read-only paths) -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🧠 Memory</div>
+      <table style="font-size:12px;">
+        <tr>
+          <td style="color:var(--text-muted);width:180px;">Database</td>
+          <td class="mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.db_path }}</td>
+        </tr>
+        <tr>
+          <td style="color:var(--text-muted);">Vector index</td>
+          <td class="mono" style="font-size:11px;color:var(--text-dim);">{{ config.memory.chroma_path }}</td>
+        </tr>
+        <tr>
+          <td style="color:var(--text-muted);">Max facts</td>
+          <td class="mono">{{ config.memory.max_facts }}</td>
+        </tr>
+      </table>
+    </div>
+
+    <button type="submit" style="padding:8px 20px;background:var(--accent);color:#000;border:none;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;">
+      Save Settings
+    </button>
+    <span style="font-size:11px;color:var(--text-muted);margin-left:12px;">Restart DuckClaw to apply changes.</span>
+
+  </form>
 </div>
+
+<style>
+  input[type="text"], input[type="number"], select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus {
+    outline: 1px solid var(--accent);
+    border-color: var(--accent);
+  }
+</style>
+
+<script>
+document.getElementById("settings-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const banner = document.getElementById("settings-banner");
+
+  const body = {
+    llm: {
+      model: form["llm.model"].value.trim(),
+      max_tokens: parseInt(form["llm.max_tokens"].value),
+      temperature: parseFloat(form["llm.temperature"].value),
+      cost_tracking: form["llm.cost_tracking"].checked,
+    },
+    permissions: {
+      default_tier: form["permissions.default_tier"].value,
+      audit_log: form["permissions.audit_log"].checked,
+      notify_on_safe: form["permissions.notify_on_safe"].checked,
+    },
+    security: {
+      prompt_injection_defense: form["security.prompt_injection_defense"].checked,
+      context_isolation: form["security.context_isolation"].checked,
+    },
+    dashboard: {
+      port: parseInt(form["dashboard.port"].value),
+    },
+  };
+
+  try {
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      throw new Error(data.detail || "Save failed");
+    }
+  } catch (err) {
+    banner.style.display = "block";
+    banner.style.background = "var(--surface2)";
+    banner.style.border = "1px solid #e74c3c";
+    banner.style.color = "#e74c3c";
+    banner.textContent = "✗ " + err.message;
+  }
+});
+</script>
 {% endblock %}
