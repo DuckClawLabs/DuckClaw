@@ -285,7 +285,6 @@ def create_app() -> FastAPI:
 
         with open(config_path, "w") as f:
             yaml.dump(raw, f, default_flow_style=False, allow_unicode=True)
-        print(f"Settings saved to {config_path}")
         return JSONResponse({"saved": True, "message": "Settings saved. Restart DuckClaw to apply."})
 
     @app.get("/api/llm/stats")

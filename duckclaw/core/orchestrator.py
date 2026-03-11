@@ -147,10 +147,7 @@ class Orchestrator:
 
         # 1. Build context
         context = self._build_context(message, session_id)
-        print("context:", context)
-        print("system_prompt:", context.get("system_prompt"))
-        print("messages:", context.get("messages"))
-
+        
         # 2. First LLM call — may return a skill call
         try:
             llm_response = await self.llm.chat(
@@ -164,7 +161,6 @@ class Orchestrator:
             self.memory.save_message(session_id, "assistant", reply, source)
             return {"reply": reply, "session_id": session_id, "notifications": [], "skill_used": None, "injection_warnings": []}
 
-        print(f"LLM response: {llm_response}")
         # 3. Scan first LLM response for injection signals before acting on it
         if self.config.security.prompt_injection_defense:
             early_warnings = scan_output(llm_response, context=message[:100])

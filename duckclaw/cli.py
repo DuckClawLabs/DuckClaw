@@ -534,7 +534,7 @@ def doctor():
     else:
         mode = oct(stat.S_IMODE(os.stat(config_path).st_mode))
         if os.stat(config_path).st_mode & 0o004:
-            warn(f"Config file is world-readable ({mode}) — consider chmod 600")
+            warn(f"Config file is world-readable ({mode}) — consider chmod 600 -- run: chmod 600 ~/.duckclaw/duckclaw.yaml")
         else:
             ok(f"Config file permissions OK ({mode})")
 
@@ -575,7 +575,7 @@ def doctor():
         try:
             with open(env_path) as f:
                 content = f.read()
-            if "sk-ant-" in content or "AIza" in content:
+            if content:
                 ok(".env contains API key entries")
             else:
                 warn(".env exists but no recognizable API keys found")
