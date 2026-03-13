@@ -66,7 +66,6 @@ dependencies = [
 
     # Skills
     "duckduckgo-search>=6,<7",
-    "mss>=9,<10",
     "Pillow>=10,<11",
     "apscheduler>=3.10,<4",
 

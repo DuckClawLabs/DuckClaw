@@ -128,6 +128,7 @@ class BaseSkill(ABC):
         # 2. Execute (permission checks happen inside each skill action)
         try:
             result = await self.execute(action, params)
+            logger.info(f"Skill {self.name}.{action} executed with result: {result}")
             return result
         except Exception as e:
             logger.exception(f"Skill {self.name}.{action} raised exception")

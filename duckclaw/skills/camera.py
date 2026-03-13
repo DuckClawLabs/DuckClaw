@@ -45,11 +45,13 @@ class CameraSkill(BaseSkill):
 
     def __init__(self, permission_engine: "PermissionEngine"):
         super().__init__(permission_engine)
+        logger.info("CameraSkill initialized with permissions: %s", self.permissions)
         self._llm = None  # Injected by Orchestrator for snap_analyze
 
     def set_llm(self, llm_router):
         """Wire LLM router for vision-enabled snap_analyze."""
         self._llm = llm_router
+        logger.info("CameraSkill LLM router set for vision analysis: %s", llm_router.config.model)
 
     # ── Entry point ────────────────────────────────────────────────────────────
 
@@ -59,7 +61,9 @@ class CameraSkill(BaseSkill):
             "list_cameras": self._list_cameras,
             "snap_analyze": self._snap_analyze,
         }
+        logger.info(f"CameraSkill execute called with action: {action}, params: {params}")
         if action not in handlers:
+            logger.warning(f"CameraSkill received unknown action: {action}")    
             return SkillResult(
                 success=False,
                 error=f"Unknown action '{action}'. Available: {', '.join(handlers)}"
@@ -71,14 +75,16 @@ class CameraSkill(BaseSkill):
     async def _snap(self, params: dict) -> SkillResult:
         camera_index = params.get("camera_index", 0)
         quality = min(params.get("quality", 85), 95)
+        logger.info(f"CameraSkill snap requested for camera_index={camera_index}, quality={quality}")
 
         allowed = await self._check(
             action_type="camera.snap",
             description=f"Take a photo from camera {camera_index}",
             details={"camera_index": camera_index},
             reversible=False,
-            risk_level="medium",
+            risk_level="high",
         )
+        logger.info(f"CameraSkill snap permission result: {'allowed' if allowed else 'denied'}")
         if not allowed:
             return SkillResult(success=False, error="Camera capture denied by user.")
 

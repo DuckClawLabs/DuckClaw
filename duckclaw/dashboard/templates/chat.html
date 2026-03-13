@@ -269,6 +269,15 @@
     border-color: rgba(245,158,11,0.4);
     color: var(--accent);
   }
+
+  .capture-preview {
+    display: block;
+    margin-top: 10px;
+    max-width: 100%;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
 </style>
 {% endblock %}
 
@@ -361,7 +370,11 @@
       showThinking(true);
     } else if (data.type === 'response') {
       showThinking(false);
-      appendMessage('assistant', data.content);
+      appendMessage('assistant', data.content, data.image_base64 || null);
+      // Always unlock input when a response arrives (covers post-approval skill completion)
+      document.getElementById('chatInput').disabled = false;
+      document.getElementById('sendBtn').disabled = false;
+      document.getElementById('chatInput').focus();
     } else if (data.type === 'notification') {
       showToast(data.message);
     } else if (data.type === 'approval_request') {
@@ -370,6 +383,8 @@
     } else if (data.type === 'error') {
       showThinking(false);
       appendMessage('assistant', '❌ Error: ' + data.message);
+      document.getElementById('chatInput').disabled = false;
+      document.getElementById('sendBtn').disabled = false;
     }
   }
 
@@ -378,6 +393,7 @@
     const input = document.getElementById('chatInput');
     const text = input.value.trim();
     if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+    if (pendingActionId) return;  // approval in progress — ignore chat input
 
     // Hide welcome screen
     if (messageCount === 0) {
@@ -404,7 +420,7 @@
   }
 
   // ── Message Rendering ──────────────────────────────────────────────────────
-  function appendMessage(role, content) {
+  function appendMessage(role, content, imageB64 = null) {
     messageCount++;
     const messages = document.getElementById('messages');
 
@@ -420,6 +436,14 @@
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble';
     bubble.innerHTML = markdownToHtml(content);
+
+    if (imageB64) {
+      const img = document.createElement('img');
+      img.src = `data:image/jpeg;base64,${imageB64}`;
+      img.className = 'capture-preview';
+      img.alt = 'Screenshot';
+      bubble.appendChild(img);
+    }
 
     const time = document.createElement('div');
     time.className = 'message-time';
@@ -482,10 +506,15 @@
       `<span>${preview.reversible ? '✓ Reversible' : '✗ Irreversible'}</span>`;
 
     document.getElementById('approvalModal').classList.add('show');
+
+    // Lock chat input while approval is pending — prevent "yes" being sent as a chat message
+    document.getElementById('chatInput').disabled = true;
+    document.getElementById('sendBtn').disabled = true;
   }
 
   function handleApproval(approved) {
     document.getElementById('approvalModal').classList.remove('show');
+
     if (ws && pendingActionId) {
       ws.send(JSON.stringify({
         type: 'approval',
@@ -493,6 +522,16 @@
         approved: approved,
       }));
       pendingActionId = null;
+
+      if (approved) {
+        // Keep input locked and show spinner — orc.chat() resumes in-place, skill is executing
+        showThinking(true);
+      } else {
+        // Denied — unlock immediately, the background task will send back a denied message
+        document.getElementById('chatInput').disabled = false;
+        document.getElementById('sendBtn').disabled = false;
+        document.getElementById('chatInput').focus();
+      }
     }
   }
 

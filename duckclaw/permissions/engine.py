@@ -227,6 +227,7 @@ class PermissionEngine:
                 do_screenshot()
         """
         tier = self.get_tier(action_type)
+        logger.info(f"Permission check: action_type={action_type}, tier={tier}, description={description}, session_id={session_id}")
 
         if tier == Tier.SAFE:
             status = "auto_approved"
@@ -242,6 +243,7 @@ class PermissionEngine:
                     logger.warning(f"Notify callback failed: {e}")
 
         elif tier == Tier.ASK:
+            logger.info(f"ASK-tier action requested: session_id={session_id}, action_type={action_type}, description={description}")
             preview = ActionPreview(
                 action_type=action_type,
                 description=description,
@@ -253,16 +255,22 @@ class PermissionEngine:
 
             approved = False
             if self._approval_callback:
+                logger.info("Invoking approval callback for ASK-tier action")
                 try:
                     approved = await self._approval_callback(preview)
+                    logger.info(f"approval callback completed and got = {approved} ")
+                    logger.info(f"Approval callback returned: {'approved' if approved else 'denied'} for action_type={action_type}")
                 except Exception as e:
                     logger.error(f"Approval callback failed: {e}")
                     approved = False
             else:
                 # No callback set — fall back to terminal prompt
+                logger.info("No approval callback set, falling back to terminal prompt for ASK-tier action")
                 approved = await self._terminal_prompt(preview)
 
+
             status = "user_approved" if approved else "user_denied"
+            logger.info(f"ASK-tier action {'approved' if approved else 'denied'}: session_id={session_id}, action_type={action_type}, description={description}")
 
         else:  # BLOCK
             approved = False
@@ -300,6 +308,7 @@ class PermissionEngine:
                 None,
                 lambda: input("Approve? [y/N]: ").strip().lower()
             )
+            logger.info(f"Terminal prompt received input: {answer}")
             return answer in ("y", "yes", 1, "1", "true", "t")
         except (EOFError, KeyboardInterrupt):
             return False

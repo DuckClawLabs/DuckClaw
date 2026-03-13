@@ -71,6 +71,7 @@ class MemoryStore:
         self._collection = None
         self._ingested_collection = None
         self._facts_collection = None
+        self._skills_collection = None
 
     async def initialize(self):
         """Initialize databases. Call once at startup."""
@@ -104,6 +105,10 @@ class MemoryStore:
             )
             self._facts_collection = self._chroma.get_or_create_collection(
                 name="duckclaw_facts",
+                metadata={"hnsw:space": "cosine"},
+            )
+            self._skills_collection = self._chroma.get_or_create_collection(
+                name="duckclaw_skills",
                 metadata={"hnsw:space": "cosine"},
             )
             logger.info("ChromaDB initialized for semantic memory")
@@ -216,6 +221,72 @@ class MemoryStore:
             logger.warning(f"ChromaDB fact search failed: {e}")
             return []
 
+    # ─── Skills Knowledge Base ────────────────────────────────────────────────
+
+    def seed_skills(self, skills: list[dict]) -> None:
+        """Populate the skills ChromaDB collection from a list of skill dicts. Idempotent."""
+        if self._skills_collection is None:
+            return
+        existing = self._skills_collection.get()
+        if existing["ids"]:
+            self._skills_collection.delete(ids=existing["ids"])
+
+        ids, documents, metadatas = [], [], []
+        for skill in skills:
+            search_doc = skill["description"]
+            if skill.get("use_cases"):
+                search_doc += "\nExample queries: " + "; ".join(skill["use_cases"])
+            ids.append(skill["skill_id"])
+            documents.append(search_doc)
+            metadatas.append({
+                "skill_id": skill["skill_id"],
+                "name": skill["name"],
+                "input_format": skill.get("input_format", ""),
+                "output_format": skill.get("output_format", ""),
+            })
+
+        self._skills_collection.add(ids=ids, documents=documents, metadatas=metadatas)
+        logger.info(f"Seeded {len(skills)} skills into ChromaDB")
+
+    def search_skills(self, query: str, n_results: int = 1, threshold: float = 0.5) -> list[dict]:
+        """
+        Semantic search over the skills knowledge base.
+        Returns skills whose description/use-case matches the query.
+        Each result includes: skill_id, name, description, input_format, output_format.
+        Only returns results above the similarity threshold.
+        """
+        if self._skills_collection is None:
+            return []
+        try:
+            count = self._skills_collection.count()
+            if count == 0:
+                return []
+            results = self._skills_collection.query(
+                query_texts=[query],
+                n_results=min(n_results, count),
+                include=["documents", "metadatas", "distances"],
+            )
+            docs = results.get("documents", [[]])[0]
+            metas = results.get("metadatas", [[]])[0]
+            distances = results.get("distances", [[]])[0]
+            matched = []
+            for doc, meta, dist in zip(docs, metas, distances):
+                # ChromaDB cosine distance: 0 = identical, 2 = opposite; similarity = 1 - dist
+                similarity = 1.0 - dist
+                if similarity >= threshold:
+                    matched.append({
+                        "skill_id": meta.get("skill_id", ""),
+                        "name": meta.get("name", ""),
+                        "description": doc,
+                        "input_format": meta.get("input_format", ""),
+                        "output_format": meta.get("output_format", ""),
+                        "similarity": round(similarity, 3),
+                    })
+            return matched
+        except Exception as e:
+            logger.warning(f"ChromaDB skill search failed: {e}")
+            return []
+
     # ─── Knowledge Base (user-ingested documents) ─────────────────────────────
 
     @staticmethod
@@ -306,12 +377,12 @@ class MemoryStore:
     def get_session_history(self, session_id: str, limit: int = 20) -> list[dict]:
         """Get recent messages for a session (for LLM context window)."""
         rows = self._db.execute(
-            "SELECT role, content, created_at FROM conversations "
-            "WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT role, content FROM conversations "
+            "WHERE session_id = ? ORDER BY id ASC LIMIT ?",
             (session_id, limit),
         ).fetchall()
         # Return in chronological order for LLM
-        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+        return [{"role": r["role"], "content": r["content"]} for r in rows]
 
     def search_memory(self, query: str, n_results: int = None) -> list[str]:
         """

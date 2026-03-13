@@ -525,13 +525,17 @@ def create_app() -> FastAPI:
         Messages: {"type": "message", "content": "...", "session_id": "..."}
         Responses: {"type": "chunk", "content": "..."} and {"type": "done"}
         """
+        logger.info("WebSocket connection established")
         await websocket.accept()
+        logger.info("WebSocket connection accepted")
         orc = get_orchestrator()
 
         # Set approval callback to send approval requests over WebSocket
         pending_approvals: dict[str, asyncio.Future] = {}
 
+
         async def ws_approval_callback(preview) -> bool:
+            logger.info(f"Permission check requires user approval: {preview.description} (type={preview.action_type}, risk={preview.risk_level})")
             import uuid
             action_id = str(uuid.uuid4())
             future: asyncio.Future = asyncio.get_event_loop().create_future()
@@ -542,57 +546,78 @@ def create_app() -> FastAPI:
                 "action_id": action_id,
                 "preview": preview.to_dict(),
             })
+            logger.info(f"Sent approval request to client: {preview.description} (action_id={action_id})")
 
             try:
                 result = await asyncio.wait_for(future, timeout=120.0)
+                logger.info(f"Received user response for action_id={action_id}: {'approved' if result else 'denied'}")
                 return result
             except asyncio.TimeoutError:
                 pending_approvals.pop(action_id, None)
+                logger.warning(f"Approval request timed out for action_id={action_id}")
                 return False
 
         async def ws_notify_callback(message: str):
+            logger.info(f"Sending notification to client: {message}")
             await websocket.send_json({
                 "type": "notification",
                 "message": message,
             })
 
+        logger.info("Setting WebSocket approval and notify callbacks")
         orc.permissions.set_approval_callback(ws_approval_callback)
+        logger.info("Approval callback set. Setting notify callback.")
         orc.permissions.set_notify_callback(ws_notify_callback)
 
         try:
             while True:
                 raw = await websocket.receive_json()
                 msg_type = raw.get("type", "message")
+                logger.info(f"Received WebSocket message of type '{msg_type}' with content: {raw}")
 
                 if msg_type == "message":
                     user_msg = raw.get("content", "").strip()
                     session_id = raw.get("session_id", "dashboard-ws")
-
+                    logger.info(f"Processing chat message for session_id={session_id}: {user_msg}")
                     if not user_msg:
                         continue
 
-                    # Stream response
                     await websocket.send_json({"type": "thinking"})
 
-                    result = await orc.chat(
-                        message=user_msg,
-                        session_id=session_id,
-                        source="dashboard",
-                    )
+                    # Run chat as a background task so the receive loop stays alive
+                    # to handle incoming approval messages while orc.chat() is waiting.
+                    async def _run_chat(msg: str, sid: str):
+                        try:
+                            result = await orc.chat(message=msg, session_id=sid, source="dashboard")
+                            ws_msg = {
+                                "type": "response",
+                                "content": result["reply"],
+                                "session_id": result["session_id"],
+                            }
+                            if result.get("image_base64"):
+                                ws_msg["image_base64"] = result["image_base64"]
+                            try:
+                                await websocket.send_json(ws_msg)
+                            except (RuntimeError, WebSocketDisconnect):
+                                pass
+                        except Exception as e:
+                            logger.error(f"Chat task error: {e}")
+                            try:
+                                await websocket.send_json({"type": "error", "message": str(e)})
+                            except (RuntimeError, WebSocketDisconnect):
+                                pass
 
-                    await websocket.send_json({
-                        "type": "response",
-                        "content": result["reply"],
-                        "session_id": result["session_id"],
-                    })
+                    asyncio.create_task(_run_chat(user_msg, session_id))
 
                 elif msg_type == "approval":
                     # User approved or denied a pending action
                     action_id = raw.get("action_id")
                     approved = raw.get("approved", False)
+                    logger.info(f"Received approval response from client for action_id={action_id}: {'approved' if approved else 'denied'}")
                     if action_id in pending_approvals:
                         pending_approvals[action_id].set_result(approved)
                         pending_approvals.pop(action_id)
+                        logger.info(f"Set result for pending approval action_id={action_id}")
 
         except WebSocketDisconnect:
             logger.info("WebSocket disconnected")

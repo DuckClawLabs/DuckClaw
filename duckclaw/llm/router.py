@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 # Suppress LiteLLM verbose logging
 litellm.suppress_debug_info = True
 litellm.set_verbose = False
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("LiteLLM Router").setLevel(logging.WARNING)
+logging.getLogger("LiteLLM Proxy").setLevel(logging.WARNING)
 
 
 @dataclass
@@ -201,6 +204,15 @@ class LLMRouter:
         async for chunk in response:
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
+
+    def get_vision_model(self) -> str:
+        """Return a vision-capable model name. Falls back to Gemini if current model doesn't support vision."""
+        model = self.config.model
+        vision_prefixes = ("claude", "gemini", "gpt-4o", "gpt-4-vision", "gpt-4-turbo")
+        if any(model.startswith(p) or f"/{p}" in model for p in vision_prefixes):
+            return model
+        # Current model (e.g. groq/*) doesn't support vision — use free Gemini fallback
+        return "gemini/gemini-2.0-flash"
 
     def get_stats(self) -> dict:
         """Return cost and usage stats for dashboard."""

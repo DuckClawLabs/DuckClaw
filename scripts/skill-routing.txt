@@ -1,0 +1,43 @@
+Yes, OpenClaw's "send all tools every request" approach has real token cost problems at scale. Here are the main better approaches:
+
+Better Skill Routing Strategies
+1. Two-Stage Routing (Best Balance) ✅
+Stage 1 — cheap embedding/small model classifies intent → picks top-K candidates
+
+Stage 2 — only those K skill schemas sent to main LLM as native tool definitions
+
+
+User message
+    ↓
+ChromaDB similarity search → top 3 skills
+    ↓
+Pass only those 3 as LLM tool definitions (not all 20+)
+    ↓
+LLM uses native function calling on that shortlist
+Token cost: ~15% of "send all" approach
+
+Accuracy: near-identical to full tool list
+
+2. Hierarchical / Grouped Routing
+Skills grouped into categories (web, file, system, messaging). First classify the category (tiny prompt), then route within that group.
+
+
+"search for X"  → web group → web_search vs web_browser
+"delete file Y" → file group → file_manager
+3. What DuckClaw Currently Does (and its problem)
+
+similarity search → top-1 hint injected → regex-parsed JSON
+Problem: top-1 misses multi-skill scenarios, regex parsing is fragile, LLM doesn't always format correctly.
+
+Recommended Fix for DuckClaw
+Switch to Two-Stage Routing with native LiteLLM tool calling:
+
+ChromaDB search → top-3 skills (already have the infra)
+Convert those to LiteLLM tools parameter format instead of hint injection
+Drop the regex _parse_skill_call() — use native tool_calls response
+This would:
+
+Keep token cost low (only relevant schemas sent)
+Be more reliable than regex JSON parsing
+Support multi-tool scenarios naturally
+Want me to implement this? It mainly touches llm/router.py, orchestrator.py, and registry.py to expose tool schemas in LiteLLM format.

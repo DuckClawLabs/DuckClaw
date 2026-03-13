@@ -51,7 +51,7 @@ def main(verbose):
     log_file = os.path.join(log_dir, "duckclaw.log")
 
     fmt = logging.Formatter(
-        "%(asctime)s [%(levelname)-8s] %(name)s — %(message)s",
+        "%(asctime)s.%(msecs)03d [%(levelname)-8s] %(name)s — %(message)s",
         datefmt="%H:%M:%S",
     )
 
@@ -199,6 +199,8 @@ def chat(model):
                 )
 
             console.print(f"[bold yellow]DuckClaw:[/bold yellow] {response['reply']}\n")
+            if response.get("image_path"):
+                console.print(f"[dim]  📸 Screenshot saved: {response['image_path']}[/dim]\n")
 
             # Show permission notifications if any
             for note in response.get("notifications", []):

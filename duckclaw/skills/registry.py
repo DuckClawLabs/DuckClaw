@@ -106,7 +106,10 @@ class SkillRegistry:
         """Dispatch a skill call. Returns SkillResult."""
         self._load_skills()
         skill = self._skills.get(skill_name)
+        logger.info(f"Dispatching skill call: {skill_name}.{action} with params: {params} and session_id: {session_id}")
         if skill is None:
             from duckclaw.skills.base import SkillResult
+            logger.warning(f"Attempted to dispatch unknown skill: {skill_name}")
             return SkillResult(success=False, error=f"Unknown skill: {skill_name}")
+        logger.info(f"Executing skill: {skill_name}.{action}")
         return await skill.run(action, params, session_id=session_id)
