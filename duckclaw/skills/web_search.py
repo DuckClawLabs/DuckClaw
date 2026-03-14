@@ -4,6 +4,7 @@ Tier: SAFE — pure information retrieval, no side effects.
 """
 
 import logging
+import time, random
 from duckclaw.skills.base import BaseSkill, SkillPermission, SkillResult
 from duckduckgo_search import DDGS
 
