@@ -50,7 +50,7 @@ SAFE_COMMAND_PREFIXES = [
     "git status", "git log", "git diff", "git branch", "git stash list",
     "git show ", "git blame ", "git tag",
     "python --version", "python3 --version",
-    "pip list", "pip show ", "pip freeze",
+    "pip install", "pip list", "pip show ", "pip freeze",
     "node --version", "npm list",
     "which ", "type ", "man ",
     "sort ", "uniq ", "cut ", "tr ",
@@ -69,22 +69,28 @@ class ShellRunnerSkill(BaseSkill):
     name = "shell_runner"
     description = "Execute shell commands with safety classification. Dangerous patterns are always blocked."
     version = "1.0.0"
-    permissions = [SkillPermission.SHELL_SAFE, SkillPermission.SHELL_EXEC]
+    permissions = [
+        SkillPermission.SHELL_SAFE, 
+        SkillPermission.SHELL_EXEC
+    ]
 
     async def execute(self, action: str, params: dict) -> SkillResult:
+        logger.info(f"ShellRunnerSkill.execute called with action: {action}, params: {params}")
         if action == "run":
             return await self._run(params)
         elif action == "check_safe":
             return self._check_safe(params)
+        logger.warning(f"Unknown action '{action}' for skill '{self.name}'")
         return SkillResult(success=False, error=f"Unknown action: {action}")
 
     async def _run(self, params: dict) -> SkillResult:
         command = params.get("command", "").strip()
         if not command:
             return SkillResult(success=False, error="command is required")
-
+        logger.info(f"Received command to run: {command!r} with params: {params}")
         # 1. Check hardcoded blocklist first
         for pattern, reason in BLOCKED_PATTERNS:
+            logger.debug(f"Checking command against blocked pattern: {pattern!r}")
             if re.search(pattern, command, re.IGNORECASE):
                 logger.warning(f"BLOCKED shell command: {command!r} — {reason}")
                 # Log to audit trail via permission engine (tier=BLOCK)
@@ -105,6 +111,7 @@ class ShellRunnerSkill(BaseSkill):
         action_type = "shell_safe" if is_safe else "shell_exec"
         risk = "low" if is_safe else "medium"
         description = f"{'Run' if is_safe else 'Execute'} command: `{command}`"
+        logger.info(f"Classified command: {command!r} as {'SAFE' if is_safe else 'UNKNOWN'} (action_type={action_type}, risk={risk})")
 
         # 3. Permission check
         approved = await self._check(
@@ -116,7 +123,7 @@ class ShellRunnerSkill(BaseSkill):
         )
         if not approved:
             return SkillResult(success=False, error="Command execution denied.")
-
+        logger.info(f"Permission check passed for command: {command!r}, proceeding to execute = {approved} ")
         # 4. Execute with timeout
         try:
             result = subprocess.run(
@@ -127,6 +134,7 @@ class ShellRunnerSkill(BaseSkill):
                 timeout=COMMAND_TIMEOUT,
                 cwd=None,
             )
+            logger.info(f"Command executed with return code {result.returncode}")
 
             output = ""
             if result.stdout:
@@ -141,13 +149,15 @@ class ShellRunnerSkill(BaseSkill):
             if len(output) > 8000:
                 output = output[:8000] + f"\n\n[... truncated — {len(output):,} total chars]"
 
-            return SkillResult(
+            shell_sr = SkillResult(
                 success=result.returncode == 0,
                 data=output,
                 action_taken=f"Ran: {command}",
                 metadata={"exit_code": result.returncode},
                 error=f"Exit code {result.returncode}" if result.returncode != 0 else None,
             )
+            logger.info(f"Shell command returning SkillResult: {shell_sr}")
+            return shell_sr
 
         except subprocess.TimeoutExpired:
             return SkillResult(success=False, error=f"Command timed out after {COMMAND_TIMEOUT}s: {command}")
@@ -159,6 +169,8 @@ class ShellRunnerSkill(BaseSkill):
         command = params.get("command", "")
         for pattern, reason in BLOCKED_PATTERNS:
             if re.search(pattern, command, re.IGNORECASE):
+                logger.info(f"Command {command!r} matches blocked pattern {pattern!r}")
                 return SkillResult(success=True, data={"safe": False, "reason": reason})
         is_safe = any(command.strip().startswith(p) for p in SAFE_COMMAND_PREFIXES)
+        logger.info(f"Command {command!r} classified as {'SAFE' if is_safe else 'UNKNOWN'}")
         return SkillResult(success=True, data={"safe": True, "tier": "notify" if is_safe else "ask"})

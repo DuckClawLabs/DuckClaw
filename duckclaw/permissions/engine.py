@@ -230,14 +230,17 @@ class PermissionEngine:
         logger.info(f"Permission check: action_type={action_type}, tier={tier}, description={description}, session_id={session_id}")
 
         if tier == Tier.SAFE:
+            logger.info(f"SAFE-tier action auto-approved: action_type={action_type}, description={description}")
             status = "auto_approved"
             approved = True
 
         elif tier == Tier.NOTIFY:
+            logger.info(f"NOTIFY-tier action auto-approved with user notification: action_type={action_type}, description={description}")
             approved = True
             status = "notified"
             if self._notify_callback:
                 try:
+                    logger.info("Invoking notify callback for NOTIFY-tier action")
                     await self._notify_callback(f"ℹ️ {description}")
                 except Exception as e:
                     logger.warning(f"Notify callback failed: {e}")
@@ -273,6 +276,7 @@ class PermissionEngine:
             logger.info(f"ASK-tier action {'approved' if approved else 'denied'}: session_id={session_id}, action_type={action_type}, description={description}")
 
         else:  # BLOCK
+            logger.warning(f"BLOCK-tier action attempted and blocked: action_type={action_type}, description={description}")
             approved = False
             status = "blocked"
             if self._notify_callback:

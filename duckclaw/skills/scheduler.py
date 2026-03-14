@@ -63,9 +63,10 @@ class SchedulerSkill(BaseSkill):
             "remove_job":    self._remove_job,
             "morning_brief": self._morning_brief,
         }
-        handler = dispatch.get(action)
+        handler = dispatch.get(action, self._remind_in)
         if not handler:
             return SkillResult(success=False, error=f"Unknown scheduler action: {action}")
+        logger.info(f"Executing scheduler action: {action} with params: {params}")
         return await handler(params)
 
     async def _remind_in(self, params: dict) -> SkillResult:
@@ -77,7 +78,7 @@ class SchedulerSkill(BaseSkill):
 
         if total_minutes <= 0:
             return SkillResult(success=False, error="minutes or hours must be > 0")
-
+        logger.info(f"Setting reminder in {total_minutes} minutes with message: '{message}'")
         approved = await self._check(
             "scheduler.add",
             f"Set reminder in {total_minutes} min: '{message}'",
@@ -85,11 +86,11 @@ class SchedulerSkill(BaseSkill):
         )
         if not approved:
             return SkillResult(success=False, error="Reminder creation denied.")
-
+        logger.info(f"Permission check passed for reminder in {total_minutes} minutes, proceeding to schedule")
         scheduler = get_scheduler()
         if not scheduler:
             return SkillResult(success=False, error="APScheduler not available. Install: pip install apscheduler")
-
+        
         from datetime import timedelta
         run_at = datetime.now() + timedelta(minutes=total_minutes)
         job_id = f"reminder_{run_at.strftime('%Y%m%d%H%M%S')}"
@@ -104,12 +105,15 @@ class SchedulerSkill(BaseSkill):
         )
 
         time_str = f"{hours}h {minutes}m" if hours else f"{minutes}m"
-        return SkillResult(
+        logger.info(f"Scheduled reminder with job_id {job_id} to fire at {run_at.isoformat()} (in {time_str})")
+        remind_sr = SkillResult(
             success=True,
             data=f"⏰ Reminder set for {time_str} from now: '{message}'",
             action_taken=f"Reminder scheduled: {message}",
             metadata={"job_id": job_id, "fires_at": run_at.isoformat()},
         )
+        logger.info(f"Reminder action returning SkillResult: {remind_sr}")
+        return remind_sr
 
     async def _remind_at(self, params: dict) -> SkillResult:
         """Set a reminder at a specific time (ISO 8601 or HH:MM)."""
@@ -119,6 +123,7 @@ class SchedulerSkill(BaseSkill):
         if not time_str:
             return SkillResult(success=False, error="time is required (e.g. '14:30' or '2025-03-15T14:30:00')")
 
+        logger.info(f"Setting reminder at {time_str} with message: '{message}'")
         # Parse time
         try:
             if "T" in time_str or "-" in time_str:
@@ -129,6 +134,7 @@ class SchedulerSkill(BaseSkill):
                 if run_at < datetime.now():
                     from datetime import timedelta
                     run_at += timedelta(days=1)  # Next occurrence
+            logger.info(f"Parsed reminder time: {run_at.isoformat()}")
         except ValueError:
             return SkillResult(success=False, error=f"Cannot parse time: '{time_str}'")
 
@@ -137,6 +143,7 @@ class SchedulerSkill(BaseSkill):
             f"Set reminder at {run_at.strftime('%H:%M')}: '{message}'",
             details={"time": run_at.isoformat(), "message": message},
         )
+        logger.info(f"Permission check for reminder at {run_at.strftime('%H:%M')} returned: {approved}")
         if not approved:
             return SkillResult(success=False, error="Reminder creation denied.")
 
@@ -144,25 +151,28 @@ class SchedulerSkill(BaseSkill):
         if not scheduler:
             return SkillResult(success=False, error="APScheduler not available.")
 
+        logger.info(f"Scheduling reminder with message: '{message}' to fire at {run_at.isoformat()}")
         job_id = f"remind_at_{run_at.strftime('%Y%m%d%H%M')}"
         scheduler.add_job(
             _fire_reminder, "date",
             run_date=run_at, args=[message, job_id], id=job_id, replace_existing=True,
         )
-
-        return SkillResult(
+        remind_sr = SkillResult(
             success=True,
             data=f"⏰ Reminder set for {run_at.strftime('%H:%M on %b %d')}: '{message}'",
             action_taken=f"Reminder at {run_at.strftime('%H:%M')}",
         )
+        logger.info(f"Reminder action returning SkillResult: {remind_sr}")
+        return remind_sr
 
     async def _add_cron(self, params: dict) -> SkillResult:
         """Add a recurring cron job."""
         cron_expr = params.get("cron", "")  # e.g. "0 8 * * *" = daily at 8am
         message = params.get("message", "")
         label = params.get("label", "Scheduled task")
-
+        logger.info(f"Adding cron job with expression: {cron_expr}, message: '{message}', label: '{label}'")
         if not cron_expr:
+            logger.warning("Cron expression is required for adding a cron job.")
             return SkillResult(success=False, error="cron expression required (e.g. '0 8 * * *')")
 
         approved = await self._check(
@@ -170,7 +180,9 @@ class SchedulerSkill(BaseSkill):
             f"Add recurring task: '{label}' ({cron_expr})",
             details={"cron": cron_expr, "label": label},
         )
+        logger.info(f"Permission check for adding cron job '{label}' with expression '{cron_expr}' returned: {approved}")
         if not approved:
+            logger.warning(f"Cron job creation denied for label: '{label}' with expression: '{cron_expr}'")
             return SkillResult(success=False, error="Cron job creation denied.")
 
         scheduler = get_scheduler()
@@ -183,35 +195,42 @@ class SchedulerSkill(BaseSkill):
 
         minute, hour, day, month, dow = parts
         job_id = f"cron_{label.replace(' ', '_').lower()}"
-
+        logger.info(f"Scheduling cron job with ID {job_id} for label '{label}' with cron expression: {cron_expr}")
         scheduler.add_job(
             _fire_reminder, "cron",
             minute=minute, hour=hour, day=day, month=month, day_of_week=dow,
             args=[message or label, job_id], id=job_id, replace_existing=True,
         )
 
-        return SkillResult(
+        cron_sr = SkillResult(
             success=True,
             data=f"✅ Recurring task '{label}' added (cron: {cron_expr})",
             action_taken=f"Cron job added: {label}",
         )
+        logger.info(f"Cron job action returning SkillResult: {cron_sr}")
+        return cron_sr  
 
     async def _list_jobs(self, params: dict) -> SkillResult:
         """List all scheduled jobs."""
         scheduler = get_scheduler()
         if not scheduler:
+            logger.warning("Attempted to list scheduled jobs, but no scheduler is running.")
             return SkillResult(success=True, data="No scheduler running.")
 
         jobs = scheduler.get_jobs()
         if not jobs:
+            logger.info("No scheduled jobs found when listing jobs.")
             return SkillResult(success=True, data="No scheduled tasks.")
 
         lines = ["Scheduled tasks:\n"]
         for job in jobs:
+            logger.info(f"Found scheduled job: id={job.id}, next_run_time={job.next_run_time}, trigger={job.trigger}")
             next_run = job.next_run_time.strftime("%Y-%m-%d %H:%M") if job.next_run_time else "N/A"
             lines.append(f"• {job.id}\n  Next run: {next_run}")
 
-        return SkillResult(success=True, data="\n".join(lines))
+        list_sr = SkillResult(success=True, data="\n".join(lines))
+        logger.info(f"List jobs action returning SkillResult: {list_sr}")
+        return list_sr
 
     async def _remove_job(self, params: dict) -> SkillResult:
         """Remove a scheduled job by ID."""
@@ -225,7 +244,9 @@ class SchedulerSkill(BaseSkill):
 
         try:
             scheduler.remove_job(job_id)
-            return SkillResult(success=True, data=f"Removed job: {job_id}")
+            remove_sr = SkillResult(success=True, data=f"Removed job: {job_id}")
+            logger.info(f"Remove job action returning SkillResult: {remove_sr}")
+            return remove_sr
         except Exception as e:
             return SkillResult(success=False, error=str(e))
 
@@ -252,8 +273,10 @@ class SchedulerSkill(BaseSkill):
             id="morning_brief", replace_existing=True,
         )
 
-        return SkillResult(
+        morning_brief_sr = SkillResult(
             success=True,
             data=f"☀️ Daily morning briefing set for {time_str}",
             action_taken="Morning briefing scheduled",
         )
+        logger.info(f"Morning briefing action returning SkillResult: {morning_brief_sr}")
+        return morning_brief_sr

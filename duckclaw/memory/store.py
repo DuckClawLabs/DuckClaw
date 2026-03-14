@@ -248,7 +248,7 @@ class MemoryStore:
         self._skills_collection.add(ids=ids, documents=documents, metadatas=metadatas)
         logger.info(f"Seeded {len(skills)} skills into ChromaDB")
 
-    def search_skills(self, query: str, n_results: int = 1, threshold: float = 0.5) -> list[dict]:
+    def search_skills(self, query: str, n_results: int = 1, threshold: float = 0.1) -> list[dict]:
         """
         Semantic search over the skills knowledge base.
         Returns skills whose description/use-case matches the query.

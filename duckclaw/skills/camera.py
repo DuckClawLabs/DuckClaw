@@ -16,8 +16,12 @@ Security:
 
 import base64
 import io
+import time
+import numpy as np
 import logging
 from typing import Optional, TYPE_CHECKING
+
+from fastapi import params
 
 from duckclaw.skills.base import BaseSkill, SkillPermission, SkillResult
 
@@ -62,13 +66,7 @@ class CameraSkill(BaseSkill):
             "snap_analyze": self._snap_analyze,
         }
         logger.info(f"CameraSkill execute called with action: {action}, params: {params}")
-        if action not in handlers:
-            logger.warning(f"CameraSkill received unknown action: {action}")    
-            return SkillResult(
-                success=False,
-                error=f"Unknown action '{action}'. Available: {', '.join(handlers)}"
-            )
-        return await handlers[action](params)
+        return await handlers.get(action, self._snap)(params)
 
     # ── Actions ────────────────────────────────────────────────────────────────
 
@@ -122,6 +120,21 @@ class CameraSkill(BaseSkill):
                 error="LLM not available for vision analysis."
             )
 
+        # success=True,
+        # data=f"Picture captured successfully and stored at {save_path}",
+        # action_taken=f"Captured frame from camera {camera_index} ({w}x{h}) and saved to {save_path}",
+        # metadata={
+        #     "size_bytes": len(jpeg_bytes),
+        #     "quality": quality,
+        #     "image_base64": b64,
+        #     "saved_path": str(save_path),
+        #     "filename": f"{name}.jpeg",
+        #     "directory": str(base_dir),
+        #     "format": "jpeg",
+        #     "width": w,
+        #     "height": h,
+        #     "camera_index": camera_index,
+        # }
         allowed = await self._check(
             action_type="camera.snap",
             description=f"Take a photo (camera {camera_index}) and analyze it with AI",
@@ -136,9 +149,13 @@ class CameraSkill(BaseSkill):
         if not capture_result.success:
             return capture_result
 
-        b64 = capture_result.data["image_base64"]
+        b64 = capture_result.metadata["image_base64"]
 
         # Send to LLM with vision
+        ANALYSIS_PROMPT = (
+            "You are an AI assistant with vision capabilities. Do details Analysis the provided image and answer the user's prompt is questionary.\n\n"
+            "User's prompt: {prompt}\n\n"
+        )
         try:
             messages = [
                 {
@@ -148,19 +165,16 @@ class CameraSkill(BaseSkill):
                             "type": "image_url",
                             "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
                         },
-                        {"type": "text", "text": prompt},
+                        {"type": "text", "text": ANALYSIS_PROMPT},
                     ],
                 }
             ]
             analysis = await self._llm.chat(messages=messages)
             return SkillResult(
                 success=True,
-                data={
-                    "analysis": analysis,
-                    "image_base64": b64,
-                    "camera_index": camera_index,
-                },
+                data=analysis,
                 action_taken=f"Captured and analyzed camera {camera_index}",
+                metadata=capture_result.metadata,
             )
         except Exception as e:
             return SkillResult(
@@ -175,54 +189,111 @@ class CameraSkill(BaseSkill):
         """Open camera, grab one frame, close immediately, return base64 JPEG."""
         try:
             import cv2
+            import sys
         except ImportError:
             return SkillResult(success=False, error=_OPENCV_MISSING)
 
-        cap = cv2.VideoCapture(camera_index)
+        # Cross-platform backend selection
+        if sys.platform.startswith("win"):
+            backend = cv2.CAP_DSHOW
+        elif sys.platform.startswith("darwin"):
+            backend = cv2.CAP_AVFOUNDATION
+        else:
+            backend = cv2.CAP_V4L2
+
+        cap = cv2.VideoCapture(camera_index, backend)
+
         if not cap.isOpened():
             return SkillResult(
                 success=False,
                 error=f"Cannot open camera {camera_index}. Use list_cameras to see available cameras."
             )
 
-        try:
-            # Discard first few frames — camera often needs warmup
-            for _ in range(3):
-                cap.read()
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        time.sleep(0.5)
 
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                return SkillResult(success=False, error="Failed to capture frame from camera.")
+        try:
+            # Camera warmup
+            frame = None
+            start = time.time()
+
+            # warmup camera stream
+            while time.time() - start < 2.0:  # 2 seconds warmup
+                ret, f = cap.read()
+                if not ret or f is None:
+                    continue
+
+                # discard black frames
+                if np.mean(f) < 5:
+                    continue
+
+                frame = f
+                break
+
+            if frame is None:
+                return SkillResult(
+                    success=False,
+                    error="Camera returned only empty/black frames."
+                )
 
             # Convert BGR → RGB
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # Encode as JPEG via Pillow (consistent with other skills)
+            import os
+            from pathlib import Path
+            from datetime import datetime
+
+            name = datetime.now().strftime("capture_%Y%m%d_%H%M%S")
+
+            base_dir = Path.home() / ".duckclaw" / "camera"
+            base_dir.mkdir(parents=True, exist_ok=True)
+
+            save_path = base_dir / f"{name}.jpeg"
+
             try:
                 from PIL import Image
+
                 pil_img = Image.fromarray(frame_rgb)
                 buf = io.BytesIO()
                 pil_img.save(buf, format="JPEG", quality=quality)
                 jpeg_bytes = buf.getvalue()
+
+                # persist to disk
+                with open(save_path, "wb") as f:
+                    f.write(jpeg_bytes)
+
             except ImportError:
-                # Fallback: OpenCV encode
-                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+                # OpenCV fallback
+                _, buffer = cv2.imencode(
+                    ".jpg",
+                    frame,
+                    [cv2.IMWRITE_JPEG_QUALITY, quality]
+                )
                 jpeg_bytes = buffer.tobytes()
 
+                with open(save_path, "wb") as f:
+                    f.write(jpeg_bytes)
+
             b64 = base64.b64encode(jpeg_bytes).decode()
+
             h, w = frame.shape[:2]
 
             return SkillResult(
                 success=True,
-                data={
+                data=f"Picture captured successfully and stored at {save_path}",
+                action_taken=f"Captured frame from camera {camera_index} ({w}x{h}) and saved to {save_path}",
+                metadata={
+                    "size_bytes": len(jpeg_bytes),
+                    "quality": quality,
                     "image_base64": b64,
+                    "saved_path": str(save_path),
+                    "filename": f"{name}.jpeg",
+                    "directory": str(base_dir),
                     "format": "jpeg",
                     "width": w,
                     "height": h,
                     "camera_index": camera_index,
-                },
-                action_taken=f"Captured frame from camera {camera_index} ({w}x{h})",
-                metadata={"size_bytes": len(jpeg_bytes), "quality": quality},
+                }
             )
         finally:
             cap.release()

@@ -1,0 +1,10 @@
+add vision model - meta-llama/llama-4-scout-17b-16e-instruct in the LLM config, so wherever skill requires vision model it uses 
+in chat, if permission required, please give a pop up, dont ask in the chat 
+
+i want skill permission should handle through web, he can change 4-tier if user want 
+file logs are not showing properly - check 
+
+scheduling once server stops, the jobs gets destroyed.
+
+we have not build smart agent layer, we have built the orchestrator, that routes to only-one-skill only 
+and we are dependent on knowledge base, 
