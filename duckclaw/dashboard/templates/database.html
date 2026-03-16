@@ -182,8 +182,10 @@
       <input type="text" id="facts-q" placeholder="Search facts…" oninput="loadFacts()">
       <select id="facts-cat" onchange="loadFacts()">
         <option value="">All categories</option>
-        <option value="work">Work</option>
+        <option value="personality">Personality</option>
+        <option value="communication">Communication</option>
         <option value="personal">Personal</option>
+        <option value="work">Work</option>
         <option value="preferences">Preferences</option>
         <option value="health">Health</option>
         <option value="calendar">Calendar</option>
@@ -365,7 +367,7 @@ async function loadFacts() {
     <td>${catBadge(f.category)}</td>
     <td>${confBar(f.confidence)}</td>
     <td class="mono text-muted" style="font-size:10px">${esc(f.created_at)}</td>
-    <td><button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="deleteFact(${f.id},this)">✕</button></td>
+    <td><button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="deleteFact('${f.id}',this)">✕</button></td>
   </tr>`).join('');
 }
 async function deleteFact(id, btn) {

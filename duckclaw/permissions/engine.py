@@ -44,6 +44,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_log(action_type);
 CREATE INDEX IF NOT EXISTS idx_audit_status ON audit_log(status);
 """
 
+RULES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS permission_rules (
+    action_type TEXT PRIMARY KEY,
+    tier        TEXT NOT NULL
+);
+"""
+
 
 class Tier(str, Enum):
     SAFE = "safe"        # No approval needed — answer questions, read memory
@@ -166,16 +173,20 @@ class PermissionEngine:
         self.config = config
         self.db_path = db_path
 
-        # Build effective rules (user overrides, but HARDCODED_BLOCKS are immutable)
-        self.rules = dict(DEFAULT_RULES)
-
-        # Apply user config overrides — but NEVER allow overriding hardcoded blocks
-        # (Even if user sets "access_credentials: safe" in config, we ignore it)
+        # Rules are always loaded from DB — self.rules is never built from the
+        # hardcoded Python dict at runtime. DEFAULT_RULES is only used for seeding.
+        self.rules: dict[str, Tier] = {}
 
         self._db = sqlite3.connect(db_path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(AUDIT_SCHEMA)
+        self._db.executescript(RULES_SCHEMA)
         self._db.commit()
+
+        # First-run: if table is empty, seed all factory defaults into DB
+        self._seed_rules_if_empty()
+        # Always load runtime rules from DB
+        self._load_rules_from_db()
 
         # Approval callback — set by active interface
         # Signature: async (preview: ActionPreview) -> bool
@@ -193,12 +204,105 @@ class PermissionEngine:
         """Register the function that notifies user."""
         self._notify_callback = callback
 
+    def _seed_rules_if_empty(self):
+        """On first run, insert all factory defaults into the DB."""
+        count = self._db.execute(
+            "SELECT COUNT(*) FROM permission_rules"
+        ).fetchone()[0]
+        if count == 0:
+            self._db.executemany(
+                "INSERT OR IGNORE INTO permission_rules (action_type, tier) VALUES (?, ?)",
+                [(action, tier.value) for action, tier in DEFAULT_RULES.items()],
+            )
+            self._db.commit()
+            logger.info(f"Seeded {len(DEFAULT_RULES)} factory permission rules into DB")
+
+    def _load_rules_from_db(self):
+        """Load ALL rules from DB into self.rules. HARDCODED_BLOCKS always stay BLOCK."""
+        self.rules = {}
+        rows = self._db.execute(
+            "SELECT action_type, tier FROM permission_rules"
+        ).fetchall()
+        for row in rows:
+            try:
+                self.rules[row["action_type"]] = Tier(row["tier"])
+            except ValueError:
+                pass
+        # Safety: HARDCODED_BLOCKS can never be anything but BLOCK, regardless of DB
+        for action in HARDCODED_BLOCKS:
+            self.rules[action] = Tier.BLOCK
+        logger.info(f"Loaded {len(self.rules)} permission rules from DB")
+
+    def get_all_rules(self) -> list:
+        """Return all rules from DB with metadata for the Settings UI."""
+        rows = self._db.execute(
+            "SELECT action_type, tier FROM permission_rules ORDER BY action_type"
+        ).fetchall()
+        result = []
+        for row in rows:
+            action_type = row["action_type"]
+            current_tier = row["tier"]
+            factory_tier = DEFAULT_RULES.get(action_type, Tier.ASK).value
+            result.append({
+                "action_type": action_type,
+                "tier": current_tier,
+                "default_tier": factory_tier,
+                "is_custom": current_tier != factory_tier,
+                "is_hardcoded": action_type in HARDCODED_BLOCKS,
+            })
+        return result
+
+    def set_rule(self, action_type: str, tier_str: str) -> bool:
+        """
+        Update a rule in DB and in self.rules immediately.
+        Returns False if hardcoded-blocked or tier is invalid.
+        """
+        if action_type in HARDCODED_BLOCKS:
+            return False
+        try:
+            tier = Tier(tier_str)
+        except ValueError:
+            return False
+        self._db.execute(
+            "INSERT OR REPLACE INTO permission_rules (action_type, tier) VALUES (?, ?)",
+            (action_type, tier.value),
+        )
+        self._db.commit()
+        self.rules[action_type] = tier
+        logger.info(f"Permission rule updated: {action_type} → {tier.value}")
+        return True
+
+    def reset_rule(self, action_type: str):
+        """Reset a rule to its factory default in DB and self.rules."""
+        if action_type in HARDCODED_BLOCKS:
+            return
+        factory = DEFAULT_RULES.get(action_type, Tier.ASK)
+        self._db.execute(
+            "INSERT OR REPLACE INTO permission_rules (action_type, tier) VALUES (?, ?)",
+            (action_type, factory.value),
+        )
+        self._db.commit()
+        self.rules[action_type] = factory
+        logger.info(f"Permission rule reset to factory default: {action_type} → {factory.value}")
+
     def get_tier(self, action_type: str) -> Tier:
-        """Get the permission tier for an action type."""
-        # HARDCODED blocks cannot be overridden
+        """
+        Get the permission tier for an action type.
+        If the action is unknown, auto-register it as ASK in the DB so it
+        appears in the Settings UI and can be customised.
+        """
         if action_type in HARDCODED_BLOCKS:
             return Tier.BLOCK
-        return self.rules.get(action_type, Tier.ASK)  # Unknown = ASK (safe default)
+        if action_type not in self.rules:
+            # New / unknown action — save to DB with safe default (ASK)
+            self._db.execute(
+                "INSERT OR IGNORE INTO permission_rules (action_type, tier) VALUES (?, ?)",
+                (action_type, Tier.ASK.value),
+            )
+            self._db.commit()
+            self.rules[action_type] = Tier.ASK
+            logger.info(f"Auto-registered unknown action '{action_type}' as ASK in DB")
+        return self.rules[action_type]
 
     async def check(
         self,

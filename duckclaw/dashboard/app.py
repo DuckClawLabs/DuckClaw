@@ -341,6 +341,42 @@ def create_app() -> FastAPI:
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
+    @app.get("/api/permissions/rules")
+    async def api_get_permission_rules():
+        """Return all action permission rules with their current and default tiers."""
+        orc = get_orchestrator()
+        return JSONResponse({"rules": orc.permissions.get_all_rules()})
+
+    @app.post("/api/permissions/rules")
+    async def api_set_permission_rule(request: Request):
+        """Update the tier for a single action type."""
+        body = await request.json()
+        action_type = body.get("action_type", "").strip()
+        tier = body.get("tier", "").strip()
+        if not action_type or not tier:
+            raise HTTPException(400, "action_type and tier are required")
+        orc = get_orchestrator()
+        ok = orc.permissions.set_rule(action_type, tier)
+        if not ok:
+            raise HTTPException(400, f"Cannot update rule for '{action_type}' — it is hardcoded or the tier is invalid")
+        return JSONResponse({"updated": action_type, "tier": tier})
+
+    @app.post("/api/permissions/rules/reset")
+    async def api_reset_permission_rule(request: Request):
+        """Reset a single action type back to its factory default tier."""
+        body = await request.json()
+        action_type = body.get("action_type", "").strip()
+        if not action_type:
+            raise HTTPException(400, "action_type is required")
+        orc = get_orchestrator()
+        orc.permissions.reset_rule(action_type)
+        # Return the new (factory default) tier
+        factory = next(
+            (r for r in orc.permissions.get_all_rules() if r["action_type"] == action_type),
+            None,
+        )
+        return JSONResponse({"reset": action_type, "tier": factory["tier"] if factory else "ask"})
+
     @app.post("/api/settings")
     async def api_save_settings(request: Request):
         """Save settings to duckclaw.yaml. Restart required to apply."""
@@ -361,6 +397,12 @@ def create_app() -> FastAPI:
             llm = body["llm"]
             if "model" in llm:
                 raw["llm"]["model"] = str(llm["model"]).strip()
+            if "reasoning_model" in llm:
+                raw["llm"]["reasoning_model"] = str(llm["reasoning_model"]).strip()
+            if "vision_model" in llm:
+                raw["llm"]["vision_model"] = str(llm["vision_model"]).strip()
+            if "audio_model" in llm:
+                raw["llm"]["audio_model"] = str(llm["audio_model"]).strip()
             if "max_tokens" in llm:
                 raw["llm"]["max_tokens"] = int(llm["max_tokens"])
             if "temperature" in llm:
@@ -466,7 +508,7 @@ def create_app() -> FastAPI:
 
         # Format: HH:MM:SS [LEVEL   ] logger.name — message
         _LINE_RE = re.compile(
-            r"^(\d{2}:\d{2}:\d{2}) \[([\w ]+)\] ([\w.\-]+) \u2014 (.*)$"
+            r"^(\d{2}:\d{2}:\d{2}\.\d{3}) \[\s*([A-Z]+)\s*\] ([\w.\-]+) — (.*)$"
         )
         LEVEL_MAP = {
             "DEBUG":    "debug",

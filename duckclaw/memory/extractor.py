@@ -14,26 +14,30 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-EXTRACTION_PROMPT = """You are a memory extraction assistant. Analyze the user's message and extract any factual information about them worth remembering for future conversations.
+EXTRACTION_PROMPT = """You are a personality and memory extraction assistant. Analyze the user's message and extract facts worth remembering — prioritizing who they ARE as a person, not just what they do.
 
-Extract facts in these categories:
-- work: job, company, projects, skills, colleagues
-- personal: name, location, hobbies, family, lifestyle
-- preferences: likes, dislikes, communication style
-- health: allergies, conditions (if voluntarily shared)
-- calendar: recurring events, schedules
+Extract facts in these categories (in order of priority):
+- personality: character traits, values, temperament, emotional style, sense of humor, how they think or make decisions
+- communication: how they prefer to receive information (blunt/detailed/casual/formal), tone preferences
+- personal: name, age, location, hobbies, family, lifestyle, life philosophy
+- work: job, company, projects, skills, colleagues, career goals
+- preferences: strong likes/dislikes, opinions, pet peeves, favorite things
+- health: allergies, conditions (only if voluntarily shared)
+- calendar: recurring events, schedules, deadlines
 
 Rules:
-1. Only extract CLEAR, EXPLICIT facts (not guesses)
-2. One fact per item — keep them short (under 15 words)
-3. Write facts in third person: "User works at..." / "User prefers..."
-4. Return ONLY a JSON array. If no facts, return []
-5. Maximum 5 facts per message
+1. PRIORITIZE personality and character over mundane facts
+2. Only extract CLEAR, EXPLICIT facts (not guesses)
+3. One fact per item — keep them short (under 15 words)
+4. Write in third person: "User is direct and prefers..." / "User values honesty..."
+5. Return ONLY a JSON array. If no facts, return []
+6. Maximum 5 facts per message
 
 Example output:
 [
-  {"fact": "User works at Acme Corp as a backend engineer", "category": "work", "confidence": 0.95},
-  {"fact": "User is working on a project called Atlas", "category": "work", "confidence": 0.90}
+  {"fact": "User is direct and dislikes vague or sugarcoated answers", "category": "personality", "confidence": 0.92},
+  {"fact": "User prefers concise explanations over lengthy ones", "category": "communication", "confidence": 0.90},
+  {"fact": "User is a solo developer building DuckClaw", "category": "work", "confidence": 0.95}
 ]
 
 User message to analyze:

@@ -2,6 +2,35 @@
 
 {% block head %}
 <style>
+  /* ── Tab bar ──────────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+    background: var(--surface);
+    padding: 0 24px;
+  }
+  .tab-btn {
+    padding: 10px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+    margin-bottom: -1px;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Form inputs ─────────────────────────────────────────────── */
   input[type="text"], input[type="number"], select {
     background: var(--surface2);
     border: 1px solid var(--border);
@@ -16,7 +45,15 @@
     border-color: var(--accent);
   }
 
-  /* ── Info card tooltip ───────────────────────────────────── */
+  .label-cell {
+    color: var(--text-muted);
+    width: 220px;
+    padding: 8px 0;
+    vertical-align: middle;
+  }
+  .input-cell { padding: 8px 0; vertical-align: middle; }
+
+  /* ── Info tooltip ─────────────────────────────────────────────── */
   .info-wrap {
     position: relative;
     display: inline-flex;
@@ -27,28 +64,22 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 15px;
-    height: 15px;
+    width: 15px; height: 15px;
     border-radius: 50%;
     background: var(--surface2);
     border: 1px solid var(--border2);
     color: var(--text-muted);
-    font-size: 9px;
-    font-weight: 700;
-    cursor: default;
-    line-height: 1;
-    font-style: normal;
+    font-size: 9px; font-weight: 700;
+    cursor: default; line-height: 1;
     flex-shrink: 0;
     transition: all 0.15s;
     user-select: none;
   }
   .info-btn:hover { border-color: var(--accent); color: var(--accent); }
-
   .info-tip {
     display: none;
     position: absolute;
-    left: 22px;
-    top: 50%;
+    left: 22px; top: 50%;
     transform: translateY(-50%);
     z-index: 100;
     width: 240px;
@@ -56,58 +87,106 @@
     border: 1px solid var(--border2);
     border-radius: var(--radius);
     padding: 10px 12px;
-    font-size: 11px;
-    line-height: 1.55;
+    font-size: 11px; line-height: 1.55;
     color: var(--text-dim);
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     pointer-events: none;
   }
-  .info-tip::before {
-    content: '';
-    position: absolute;
-    left: -5px;
-    top: 50%;
-    transform: translateY(-50%) rotate(45deg);
-    width: 8px;
-    height: 8px;
-    background: var(--surface);
-    border-left: 1px solid var(--border2);
-    border-bottom: 1px solid var(--border2);
-  }
-  .info-tip .tip-title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 5px;
-  }
-  .info-tip code {
-    background: var(--surface2);
-    padding: 1px 4px;
-    border-radius: 3px;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--accent);
-  }
+  .info-tip .tip-title { font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+  .info-tip code { background: var(--surface2); padding: 1px 4px; border-radius: 3px; font-family: var(--font-mono); font-size: 10px; color: var(--accent); }
   .info-wrap:hover .info-tip { display: block; }
 
-  /* keep tooltip inside viewport for last rows */
-  tr:nth-last-child(-n+2) .info-tip {
-    top: auto;
-    bottom: 0;
-    transform: none;
+  /* ── Permission rules table ───────────────────────────────────── */
+  .rules-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .rules-table th {
+    text-align: left; padding: 8px 10px;
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
   }
-  tr:nth-last-child(-n+2) .info-tip::before {
-    top: 12px;
-    transform: rotate(45deg);
+  .rules-table td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle; }
+  .rules-table tr:last-child td { border-bottom: none; }
+  .rules-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .tier-select {
+    padding: 3px 6px;
+    font-size: 11px;
+    border-radius: 4px;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--font-mono);
+    cursor: pointer;
+  }
+  .tier-select:focus { outline: 1px solid var(--accent); }
+  .tier-select.changed { border-color: var(--accent); }
+
+  .tier-safe   { color: #22c55e; }
+  .tier-notify { color: #3b82f6; }
+  .tier-ask    { color: #f59e0b; }
+  .tier-block  { color: #ef4444; }
+
+  .hardcoded-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    background: rgba(239,68,68,0.12);
+    color: #ef4444;
+    letter-spacing: 0.5px;
+    font-family: var(--font-mono);
+  }
+  .custom-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-left: 4px;
+    vertical-align: middle;
+    title: "Custom override";
   }
 
-  .label-cell {
-    color: var(--text-muted);
-    width: 200px;
-    padding: 8px 0;
-    vertical-align: middle;
+  .rules-filter {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
   }
-  .input-cell { padding: 8px 0; vertical-align: middle; }
+  .rules-filter input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 5px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    flex: 1;
+  }
+  .rules-filter input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+
+  .save-rules-btn {
+    padding: 6px 16px;
+    background: var(--accent);
+    color: #09090b;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .save-rules-btn:hover { filter: brightness(1.1); }
+  .reset-rule-btn {
+    padding: 2px 8px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border2);
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .reset-rule-btn:hover { border-color: var(--accent); color: var(--accent); }
 </style>
 {% endblock %}
 
@@ -116,231 +195,353 @@
   <span class="page-title">⚙️ Settings</span>
 </div>
 
-<div class="page-content">
-  <div id="settings-banner" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:var(--radius);font-size:12px;"></div>
+<div id="settings-banner" style="display:none;margin:0 24px 12px;padding:10px 14px;border-radius:var(--radius);font-size:12px;"></div>
 
-  <form id="settings-form">
+<!-- Tab bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('llm', this)">🤖 AI Model</button>
+  <button class="tab-btn"        onclick="switchTab('permissions', this)">🛡️ Permissions</button>
+  <button class="tab-btn"        onclick="switchTab('security', this)">🔒 Security</button>
+  <button class="tab-btn"        onclick="switchTab('dashboard', this)">🖥️ Dashboard</button>
+  <button class="tab-btn"        onclick="switchTab('memory', this)">🧠 Memory</button>
+</div>
 
-    <!-- ── LLM Settings ──────────────────────────────────────────── -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🤖 AI Model</div>
-      <table style="font-size:12px;width:100%;border:none;">
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Primary model
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Primary model</div>
-                The AI model used for all responses. DuckClaw uses LiteLLM, so any supported provider works.
-                Prefix with <code>groq/</code>, <code>gemini/</code>, or <code>ollama/</code> for non-Claude models.
-                Example: <code>gemini/gemini-2.0-flash</code>
+<div class="page-content" style="padding-top:0;">
+
+  <!-- ── LLM Tab ─────────────────────────────────────────────── -->
+  <div id="tab-llm" class="tab-panel active">
+    <form id="form-llm">
+      <div class="card" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🤖 AI Model</div>
+        <table style="font-size:12px;width:100%;border:none;">
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Primary model
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Primary model</div>
+                  The AI model used for all responses. DuckClaw uses LiteLLM, so any supported provider works.
+                  Prefix with <code>groq/</code>, <code>gemini/</code>, or <code>ollama/</code> for non-Claude models.
+                  Example: <code>gemini/gemini-2.0-flash</code>
+                </div>
               </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <input name="llm.model" type="text" value="{{ config.llm.model }}" list="model-suggestions" style="width:260px;" />
-            <datalist id="model-suggestions">
-              <option value="claude-sonnet-4-5-20251001">
-              <option value="claude-haiku-4-5-20251001">
-              <option value="gemini/gemini-2.0-flash">
-              <option value="groq/llama3-70b-8192">
-            </datalist>
-          </td>
-        </tr>
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Max tokens
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Max tokens</div>
-                Maximum tokens the model generates per response.
-                Higher = longer answers but more API cost.
-                Range: <code>256</code> – <code>32768</code>. Recommended: <code>4096</code>.
+            </td>
+            <td class="input-cell">
+              <input name="llm.model" type="text" value="{{ config.llm.model }}" list="model-suggestions" style="width:260px;" />
+              <datalist id="model-suggestions">
+                <option value="claude-sonnet-4-5-20251001">
+                <option value="claude-haiku-4-5-20251001">
+                <option value="gemini/gemini-2.0-flash">
+                <option value="groq/llama3-70b-8192">
+              </datalist>
+            </td>
+          </tr>
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Reasoning model
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Reasoning model</div>
+                  Used for reflection and response synthesis — complex multi-step thinking.
+                  Leave blank to use the primary model. Examples: <code>claude-sonnet-4-5-20251001</code>, <code>deepseek/deepseek-r1</code>, <code>groq/deepseek-r1-distill-llama-70b</code>
+                </div>
               </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <input name="llm.max_tokens" type="number" min="256" max="32768" value="{{ config.llm.max_tokens }}" style="width:100px;" />
-          </td>
-        </tr>
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Temperature
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Temperature</div>
-                Controls randomness. <code>0</code> = deterministic and precise.
-                <code>1–2</code> = more creative and varied.
-                Recommended: <code>0.7</code> for general chat.
+            </td>
+            <td class="input-cell">
+              <input name="llm.reasoning_model" type="text" value="{{ config.llm.reasoning_model }}" list="reasoning-suggestions" style="width:260px;" placeholder="(uses primary model)" />
+              <datalist id="reasoning-suggestions">
+                <option value="claude-sonnet-4-5-20251001">
+                <option value="claude-opus-4-6">
+                <option value="deepseek/deepseek-r1">
+                <option value="groq/deepseek-r1-distill-llama-70b">
+                <option value="gemini/gemini-2.0-flash-thinking-exp">
+              </datalist>
+            </td>
+          </tr>
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Vision model
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Vision model</div>
+                  Used for screenshot analysis, image understanding, and camera skills.
+                  Leave blank for auto-detection (falls back to <code>gemini/gemini-2.0-flash</code> if primary can't do vision).
+                  Requires a vision-capable API key — set it in <code>~/.duckclaw/.env</code> or via the CLI setup.
+                  Examples: <code>gemini/gemini-2.0-flash</code>, <code>claude-haiku-4-5-20251001</code>, <code>gpt-4o</code>
+                </div>
               </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <input name="llm.temperature" type="number" min="0" max="2" step="0.05" value="{{ config.llm.temperature }}" style="width:80px;" />
-          </td>
-        </tr>
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Cost tracking
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Cost tracking</div>
-                Estimates token cost for each LLM call and logs it.
-                Useful for monitoring API spend.
-                Works best with Claude and OpenAI models.
+            </td>
+            <td class="input-cell">
+              <input name="llm.vision_model" type="text" value="{{ config.llm.vision_model }}" list="vision-suggestions" style="width:260px;" placeholder="(auto-detect from primary)" />
+              <datalist id="vision-suggestions">
+                <option value="gemini/gemini-2.0-flash">
+                <option value="claude-haiku-4-5-20251001">
+                <option value="claude-sonnet-4-5-20251001">
+                <option value="gpt-4o">
+                <option value="gpt-4-turbo">
+              </datalist>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">
+                💡 Add API key to <code style="font-family:var(--font-mono);">~/.duckclaw/.env</code> — e.g. <code style="font-family:var(--font-mono);">GEMINI_API_KEY=...</code> or <code style="font-family:var(--font-mono);">ANTHROPIC_API_KEY=...</code>
               </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <input name="llm.cost_tracking" type="checkbox" {% if config.llm.cost_tracking %}checked{% endif %} />
-          </td>
-        </tr>
-      </table>
+            </td>
+          </tr>
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Audio model
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Audio model</div>
+                  Used for audio transcription and voice input processing.
+                  Default: <code>gemini/gemini-2.0-flash</code> (supports audio natively, free tier available).
+                  Requires <code>GEMINI_API_KEY</code> in <code>~/.duckclaw/.env</code>.
+                  Alternative: <code>groq/whisper-large-v3</code> (fast, free tier).
+                </div>
+              </div>
+            </td>
+            <td class="input-cell">
+              <input name="llm.audio_model" type="text" value="{{ config.llm.audio_model }}" list="audio-suggestions" style="width:260px;" placeholder="gemini/gemini-2.0-flash" />
+              <datalist id="audio-suggestions">
+                <option value="gemini/gemini-2.0-flash">
+                <option value="groq/whisper-large-v3">
+                <option value="groq/whisper-large-v3-turbo">
+              </datalist>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">
+                💡 Requires API key — <code style="font-family:var(--font-mono);">GEMINI_API_KEY=...</code> or <code style="font-family:var(--font-mono);">GROQ_API_KEY=...</code>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Max tokens
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Max tokens</div>
+                  Maximum tokens the model generates per response. Range: <code>256–32768</code>. Recommended: <code>4096</code>.
+                </div>
+              </div>
+            </td>
+            <td class="input-cell">
+              <input name="llm.max_tokens" type="number" min="256" max="32768" value="{{ config.llm.max_tokens }}" style="width:100px;" />
+            </td>
+          </tr>
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Temperature
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Temperature</div>
+                  Controls randomness. <code>0</code> = deterministic. <code>1–2</code> = more creative. Recommended: <code>0.7</code>.
+                </div>
+              </div>
+            </td>
+            <td class="input-cell">
+              <input name="llm.temperature" type="number" min="0" max="2" step="0.05" value="{{ config.llm.temperature }}" style="width:80px;" />
+            </td>
+          </tr>
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Cost tracking
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Cost tracking</div>
+                  Estimates token cost for each LLM call and logs it.
+                </div>
+              </div>
+            </td>
+            <td class="input-cell">
+              <input name="llm.cost_tracking" type="checkbox" {% if config.llm.cost_tracking %}checked{% endif %} />
+            </td>
+          </tr>
+        </table>
+      </div>
+      <button type="submit" class="save-rules-btn">Save AI Settings</button>
+      <span style="font-size:11px;color:var(--text-muted);margin-left:12px;">Restart DuckClaw to apply changes.</span>
+    </form>
+  </div>
+
+  <!-- ── Permissions Tab ────────────────────────────────────────── -->
+  <div id="tab-permissions" class="tab-panel">
+
+    <!-- Global permission settings -->
+    <form id="form-permissions">
+      <div class="card" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🛡️ Global Permission Settings</div>
+        <table style="font-size:12px;width:100%;border:none;">
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Default tier
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Default permission tier</div>
+                  Fallback tier for unclassified actions.<br>
+                  🟢 <code>safe</code> — silent auto-approve<br>
+                  🔵 <code>notify</code> — auto-approve + notification<br>
+                  🟡 <code>ask</code> — require your confirmation<br>
+                  🔴 <code>block</code> — never allow
+                </div>
+              </div>
+            </td>
+            <td class="input-cell">
+              <select name="permissions.default_tier">
+                {% for tier in ["safe", "notify", "ask", "block"] %}
+                <option value="{{ tier }}" {% if config.permissions.default_tier == tier %}selected{% endif %}>{{ tier }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Audit log
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Audit log</div>
+                  Records every action to a persistent log. Required for the Audit Log page to work.
+                </div>
+              </div>
+            </td>
+            <td class="input-cell">
+              <input name="permissions.audit_log" type="checkbox" {% if config.permissions.audit_log %}checked{% endif %} />
+            </td>
+          </tr>
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Notify on safe
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Notify on safe</div>
+                  Show a notification even for SAFE-tier actions (normally silent).
+                </div>
+              </div>
+            </td>
+            <td class="input-cell">
+              <input name="permissions.notify_on_safe" type="checkbox" {% if config.permissions.notify_on_safe %}checked{% endif %} />
+            </td>
+          </tr>
+        </table>
+        <div style="margin-top:14px;">
+          <button type="submit" class="save-rules-btn">Save Global Settings</button>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:12px;">Restart required to apply.</span>
+        </div>
+      </div>
+    </form>
+
+    <!-- Per-action tier overrides -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text);">⚙️ Action Permission Rules</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">
+            Change the tier for individual actions.
+            <span style="color:var(--accent);">●</span> = custom override.
+            <span style="font-family:var(--font-mono);font-size:10px;background:rgba(239,68,68,0.12);color:#ef4444;padding:1px 4px;border-radius:3px;">HARDCODED</span> = cannot be changed.
+          </div>
+        </div>
+        <button class="save-rules-btn" onclick="saveAllRules()">Save Rule Changes</button>
+      </div>
+
+      <div class="rules-filter">
+        <input type="search" id="rulesSearch" placeholder="Filter actions…" oninput="filterRules()" />
+        <div style="display:flex;gap:4px;">
+          <button class="reset-rule-btn" onclick="filterByTier('')"  id="ftier-all"    style="border-color:var(--accent);color:var(--accent);">All</button>
+          <button class="reset-rule-btn" onclick="filterByTier('safe')">🟢 safe</button>
+          <button class="reset-rule-btn" onclick="filterByTier('notify')">🔵 notify</button>
+          <button class="reset-rule-btn" onclick="filterByTier('ask')">🟡 ask</button>
+          <button class="reset-rule-btn" onclick="filterByTier('block')">🔴 block</button>
+        </div>
+      </div>
+
+      <div style="overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border);">
+        <table class="rules-table" id="rulesTable">
+          <thead>
+            <tr>
+              <th>Action Type</th>
+              <th>Current Tier</th>
+              <th>Default</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="rulesBody">
+            <tr><td colspan="4" style="text-align:center;padding:32px;color:var(--text-muted);">Loading rules…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
+  </div>
 
-    <!-- ── Permission Settings ───────────────────────────────────── -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🛡️ Permissions</div>
-      <table style="font-size:12px;width:100%;border:none;">
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Default tier
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Default permission tier</div>
-                Fallback tier for unclassified actions.<br>
-                🟢 <code>safe</code> — silent auto-approve<br>
-                🔵 <code>notify</code> — auto-approve + notification<br>
-                🟡 <code>ask</code> — require your confirmation<br>
-                🔴 <code>block</code> — never allow
+  <!-- ── Security Tab ───────────────────────────────────────────── -->
+  <div id="tab-security" class="tab-panel">
+    <form id="form-security">
+      <div class="card" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🔒 Security</div>
+        <table style="font-size:12px;width:100%;border:none;">
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Prompt injection defense
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Prompt injection defense</div>
+                  Scans all messages and responses for injection patterns. Strongly recommended.
+                </div>
               </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <select name="permissions.default_tier">
-              {% for tier in ["safe", "notify", "ask", "block"] %}
-              <option value="{{ tier }}" {% if config.permissions.default_tier == tier %}selected{% endif %}>{{ tier }}</option>
-              {% endfor %}
-            </select>
-          </td>
-        </tr>
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Audit log
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Audit log</div>
-                Records every action DuckClaw takes — skill calls, file reads, web searches — to a persistent log.
-                Required for the Audit Log page to work.
+            </td>
+            <td class="input-cell">
+              <input name="security.prompt_injection_defense" type="checkbox" {% if config.security.prompt_injection_defense %}checked{% endif %} />
+            </td>
+          </tr>
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Context isolation
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Context isolation</div>
+                  Wraps external data in a security fence so the LLM treats it as data only — prevents indirect injection attacks.
+                </div>
               </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <input name="permissions.audit_log" type="checkbox" {% if config.permissions.audit_log %}checked{% endif %} />
-          </td>
-        </tr>
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Notify on safe
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Notify on safe</div>
-                Show a notification even for SAFE-tier actions (which are normally silent).
-                Turn on for full visibility into everything DuckClaw does.
-              </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <input name="permissions.notify_on_safe" type="checkbox" {% if config.permissions.notify_on_safe %}checked{% endif %} />
-          </td>
-        </tr>
-      </table>
-    </div>
+            </td>
+            <td class="input-cell">
+              <input name="security.context_isolation" type="checkbox" {% if config.security.context_isolation %}checked{% endif %} />
+            </td>
+          </tr>
+        </table>
+        <div style="margin-top:14px;">
+          <button type="submit" class="save-rules-btn">Save Security Settings</button>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:12px;">Restart required to apply.</span>
+        </div>
+      </div>
+    </form>
+  </div>
 
-    <!-- ── Security Settings ─────────────────────────────────────── -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🔒 Security</div>
-      <table style="font-size:12px;width:100%;border:none;">
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Prompt injection defense
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Prompt injection defense</div>
-                Scans all incoming messages and LLM responses for injection patterns —
-                attempts by malicious content to override DuckClaw's instructions.
-                Strongly recommended to keep enabled.
+  <!-- ── Dashboard Tab ─────────────────────────────────────────── -->
+  <div id="tab-dashboard" class="tab-panel">
+    <form id="form-dashboard">
+      <div class="card" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🖥️ Dashboard</div>
+        <table style="font-size:12px;width:100%;border:none;">
+          <tr>
+            <td class="label-cell">
+              <div class="info-wrap">Port
+                <span class="info-btn">i</span>
+                <div class="info-tip"><div class="tip-title">Dashboard port</div>
+                  The local port where the DuckClaw dashboard is served. Default: <code>8741</code>. Restart required after changing.
+                </div>
               </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <input name="security.prompt_injection_defense" type="checkbox" {% if config.security.prompt_injection_defense %}checked{% endif %} />
-          </td>
-        </tr>
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Context isolation
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Context isolation</div>
-                Wraps external data (web results, file contents) in a security fence so the LLM treats it as data only — not as instructions.
-                Prevents indirect prompt injection attacks.
-              </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <input name="security.context_isolation" type="checkbox" {% if config.security.context_isolation %}checked{% endif %} />
-          </td>
-        </tr>
-      </table>
-    </div>
+            </td>
+            <td class="input-cell">
+              <input name="dashboard.port" type="number" value="{{ config.dashboard.port }}" style="width:100px;opacity:0.5;cursor:not-allowed;" readonly />
+              <span style="font-size:10px;color:var(--text-muted);margin-left:8px;">Change via <code style="font-family:var(--font-mono);">~/.duckclaw/config.yaml</code></span>
+            </td>
+          </tr>
+        </table>
+        <div style="margin-top:14px;">
+          <button type="submit" class="save-rules-btn">Save Dashboard Settings</button>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:12px;">Restart required to apply.</span>
+        </div>
+      </div>
+    </form>
+  </div>
 
-    <!-- ── Dashboard Settings ────────────────────────────────────── -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🖥️ Dashboard</div>
-      <table style="font-size:12px;width:100%;border:none;">
-        <tr>
-          <td class="label-cell">
-            <div class="info-wrap">
-              Port
-              <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Dashboard port</div>
-                The local port where the DuckClaw dashboard is served.
-                Default: <code>8741</code>.
-                A restart is required after changing this value.
-              </div>
-            </div>
-          </td>
-          <td class="input-cell">
-            <input name="dashboard.port" type="number" min="1024" max="65535" value="{{ config.dashboard.port }}" style="width:100px;" />
-          </td>
-        </tr>
-      </table>
-    </div>
-
-    <!-- ── Memory (read-only) ─────────────────────────────────────── -->
-    <div class="card" style="margin-bottom:16px;">
-      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">🧠 Memory <span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:6px;">read-only</span></div>
+  <!-- ── Memory Tab ────────────────────────────────────────────── -->
+  <div id="tab-memory" class="tab-panel">
+    <div class="card">
+      <div style="font-size:13px;font-weight:600;margin-bottom:16px;color:var(--text);">
+        🧠 Memory
+        <span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:6px;">read-only</span>
+      </div>
       <table style="font-size:12px;border:none;">
         <tr>
           <td class="label-cell">
-            <div class="info-wrap">
-              Database
+            <div class="info-wrap">Database
               <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">SQLite database path</div>
+              <div class="info-tip"><div class="tip-title">SQLite database path</div>
                 Stores all user facts, conversation history, and ingested file records.
-                Editable in the Database page.
               </div>
             </div>
           </td>
@@ -348,13 +549,10 @@
         </tr>
         <tr>
           <td class="label-cell">
-            <div class="info-wrap">
-              Vector index
+            <div class="info-wrap">Vector index
               <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">ChromaDB vector index path</div>
-                Stores semantic embeddings of conversations and ingested documents for memory search.
-                Used when DuckClaw retrieves relevant past context.
+              <div class="info-tip"><div class="tip-title">ChromaDB vector index path</div>
+                Stores semantic embeddings of conversations and documents for memory search.
               </div>
             </div>
           </td>
@@ -362,73 +560,243 @@
         </tr>
         <tr>
           <td class="label-cell">
-            <div class="info-wrap">
-              Max facts
+            <div class="info-wrap">Max facts
               <span class="info-btn">i</span>
-              <div class="info-tip">
-                <div class="tip-title">Max facts</div>
-                Maximum number of user facts held in memory at once.
-                Older facts are pruned when the limit is reached to keep the context window lean.
+              <div class="info-tip"><div class="tip-title">Max facts</div>
+                Maximum number of user facts held in memory. Older facts are pruned when limit is reached.
               </div>
             </div>
           </td>
           <td class="input-cell mono">{{ config.memory.max_facts }}</td>
         </tr>
+        <tr>
+          <td class="label-cell">Search results</td>
+          <td class="input-cell mono">{{ config.memory.semantic_search_results }}</td>
+        </tr>
       </table>
     </div>
+  </div>
 
-    <button type="submit" style="padding:8px 20px;background:var(--accent);color:#000;border:none;border-radius:var(--radius);font-size:12px;font-weight:600;cursor:pointer;">
-      Save Settings
-    </button>
-    <span style="font-size:11px;color:var(--text-muted);margin-left:12px;">Restart DuckClaw to apply changes.</span>
-
-  </form>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-document.getElementById("settings-form").addEventListener("submit", async (e) => {
+// ── Tab switching ──────────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'permissions') loadRules();
+}
+
+// ── Banner helper ──────────────────────────────────────────────────
+function showBanner(msg, ok) {
+  const b = document.getElementById('settings-banner');
+  b.style.display    = 'block';
+  b.style.background = 'var(--surface2)';
+  b.style.border     = ok ? '1px solid #22c55e' : '1px solid #ef4444';
+  b.style.color      = ok ? '#22c55e' : '#ef4444';
+  b.textContent      = (ok ? '✓ ' : '✗ ') + msg;
+  setTimeout(() => { b.style.display = 'none'; }, 4000);
+}
+
+// ── Save helpers (generic settings POST) ──────────────────────────
+async function saveSettings(body) {
+  const res  = await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Save failed');
+  return data;
+}
+
+// ── LLM form ──────────────────────────────────────────────────────
+document.getElementById('form-llm').addEventListener('submit', async e => {
   e.preventDefault();
-  const form   = e.target;
-  const banner = document.getElementById("settings-banner");
-
-  const body = {
-    llm: {
-      model:         form["llm.model"].value.trim(),
-      max_tokens:    parseInt(form["llm.max_tokens"].value),
-      temperature:   parseFloat(form["llm.temperature"].value),
-      cost_tracking: form["llm.cost_tracking"].checked,
-    },
-    permissions: {
-      default_tier:   form["permissions.default_tier"].value,
-      audit_log:      form["permissions.audit_log"].checked,
-      notify_on_safe: form["permissions.notify_on_safe"].checked,
-    },
-    security: {
-      prompt_injection_defense: form["security.prompt_injection_defense"].checked,
-      context_isolation:        form["security.context_isolation"].checked,
-    },
-    dashboard: {
-      port: parseInt(form["dashboard.port"].value),
-    },
-  };
-
+  const f = e.target;
   try {
-    const res  = await fetch("/api/settings", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
-    const data = await res.json();
-    if (res.ok) {
-      window.location.reload();
-    } else {
-      throw new Error(data.detail || "Save failed");
-    }
-  } catch (err) {
-    banner.style.display    = "block";
-    banner.style.background = "var(--surface2)";
-    banner.style.border     = "1px solid #e74c3c";
-    banner.style.color      = "#e74c3c";
-    banner.textContent      = "✗ " + err.message;
-  }
+    await saveSettings({ llm: {
+      model:           f['llm.model'].value.trim(),
+      reasoning_model: f['llm.reasoning_model'].value.trim(),
+      vision_model:    f['llm.vision_model'].value.trim(),
+      audio_model:     f['llm.audio_model'].value.trim(),
+      max_tokens:      parseInt(f['llm.max_tokens'].value),
+      temperature:     parseFloat(f['llm.temperature'].value),
+      cost_tracking:   f['llm.cost_tracking'].checked,
+    }});
+    showBanner('AI settings saved. Restart DuckClaw to apply.', true);
+  } catch (err) { showBanner(err.message, false); }
 });
+
+// ── Permissions form ──────────────────────────────────────────────
+document.getElementById('form-permissions').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await saveSettings({ permissions: {
+      default_tier:   f['permissions.default_tier'].value,
+      audit_log:      f['permissions.audit_log'].checked,
+      notify_on_safe: f['permissions.notify_on_safe'].checked,
+    }});
+    showBanner('Permission settings saved. Restart DuckClaw to apply.', true);
+  } catch (err) { showBanner(err.message, false); }
+});
+
+// ── Security form ──────────────────────────────────────────────────
+document.getElementById('form-security').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await saveSettings({ security: {
+      prompt_injection_defense: f['security.prompt_injection_defense'].checked,
+      context_isolation:        f['security.context_isolation'].checked,
+    }});
+    showBanner('Security settings saved. Restart DuckClaw to apply.', true);
+  } catch (err) { showBanner(err.message, false); }
+});
+
+// ── Dashboard form ────────────────────────────────────────────────
+document.getElementById('form-dashboard').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    await saveSettings({ dashboard: {} });
+    showBanner('Dashboard settings saved. Restart DuckClaw to apply.', true);
+  } catch (err) { showBanner(err.message, false); }
+});
+
+// ── Permission rules table ─────────────────────────────────────────
+let _allRules = [];
+let _tierFilter = '';
+
+const TIER_EMOJI = { safe:'🟢', notify:'🔵', ask:'🟡', block:'🔴' };
+
+async function loadRules() {
+  try {
+    const res  = await fetch('/api/permissions/rules');
+    const data = await res.json();
+    _allRules = data.rules;
+    renderRules();
+  } catch (err) {
+    document.getElementById('rulesBody').innerHTML =
+      `<tr><td colspan="4" style="color:var(--red);padding:16px;">Failed to load rules: ${err}</td></tr>`;
+  }
+}
+
+function renderRules() {
+  const q    = document.getElementById('rulesSearch').value.toLowerCase();
+  const rows = _allRules.filter(r => {
+    if (_tierFilter && r.tier !== _tierFilter) return false;
+    if (q && !r.action_type.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  if (!rows.length) {
+    document.getElementById('rulesBody').innerHTML =
+      `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted);">No matching actions.</td></tr>`;
+    return;
+  }
+
+  document.getElementById('rulesBody').innerHTML = rows.map(r => {
+    const hardcoded = r.is_hardcoded;
+    const emoji     = TIER_EMOJI[r.tier] || '';
+    const tierClass = 'tier-' + r.tier;
+    const customDot = (r.is_custom && !hardcoded) ? '<span class="custom-dot" title="Custom override"></span>' : '';
+
+    const tierCell = hardcoded
+      ? `<span class="${tierClass}">${emoji} ${r.tier}</span> <span class="hardcoded-badge">HARDCODED</span>`
+      : `<select class="tier-select" data-action="${escAttr(r.action_type)}" onchange="markChanged(this)">
+           <option value="safe"   ${r.tier==='safe'   ?'selected':''}>🟢 safe</option>
+           <option value="notify" ${r.tier==='notify' ?'selected':''}>🔵 notify</option>
+           <option value="ask"    ${r.tier==='ask'    ?'selected':''}>🟡 ask</option>
+           <option value="block"  ${r.tier==='block'  ?'selected':''}>🔴 block</option>
+         </select>`;
+
+    const resetBtn = (!hardcoded && r.is_custom)
+      ? `<button class="reset-rule-btn" onclick="resetRule('${escAttr(r.action_type)}')">Reset</button>`
+      : '';
+
+    return `<tr data-tier="${r.tier}">
+      <td class="mono" style="font-size:11px;color:var(--text-dim);">${escHtml(r.action_type)}${customDot}</td>
+      <td>${tierCell}</td>
+      <td style="font-size:11px;color:var(--text-muted);">${TIER_EMOJI[r.default_tier]||''} ${r.default_tier}</td>
+      <td>${resetBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filterRules() { renderRules(); }
+
+function filterByTier(tier) {
+  _tierFilter = tier;
+  document.querySelectorAll('[id^="ftier-"]').forEach(b => {
+    b.style.borderColor = '';
+    b.style.color = '';
+  });
+  const activeId = tier ? 'ftier-' + tier : 'ftier-all';
+  const el = document.getElementById(activeId);
+  if (el) { el.style.borderColor = 'var(--accent)'; el.style.color = 'var(--accent)'; }
+  renderRules();
+}
+
+function markChanged(sel) {
+  sel.classList.add('changed');
+}
+
+async function saveAllRules() {
+  const selects = document.querySelectorAll('#rulesBody .tier-select.changed');
+  if (!selects.length) { showBanner('No changes to save.', true); return; }
+  let saved = 0, errors = 0;
+  for (const sel of selects) {
+    const actionType = sel.dataset.action;
+    const tier       = sel.value;
+    try {
+      const res = await fetch('/api/permissions/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_type: actionType, tier }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail);
+      sel.classList.remove('changed');
+      // Update local data
+      const rule = _allRules.find(r => r.action_type === actionType);
+      if (rule) { rule.tier = tier; rule.is_custom = true; }
+      saved++;
+    } catch (err) {
+      console.error(err);
+      errors++;
+    }
+  }
+  if (errors) showBanner(`${saved} saved, ${errors} failed.`, false);
+  else showBanner(`${saved} rule(s) saved. Takes effect immediately.`, true);
+  renderRules();
+}
+
+async function resetRule(actionType) {
+  try {
+    const res = await fetch('/api/permissions/rules/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action_type: actionType }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const data = await res.json();
+    const rule = _allRules.find(r => r.action_type === actionType);
+    if (rule) { rule.tier = data.tier; rule.is_custom = false; }
+    showBanner(`Reset ${actionType} → ${data.tier} (factory default).`, true);
+    renderRules();
+  } catch (err) { showBanner(err.message, false); }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s) {
+  return String(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 </script>
 {% endblock %}

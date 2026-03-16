@@ -1,7 +1,9 @@
 # 🦆🤖 DuckClaw
 
-**Powerful AI — built for you, built with you, built securely.**
-*Local-first personal AI assistant with a 4-tier permission engine.*
+**Powerful AI — built for you, built with you, built securely in Python**
+> *Local-first personal AI assistant with a 4-tier permission engine.*
+
+> *AI assistance you can actually trust — because it works with you, not around you.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
@@ -43,6 +45,60 @@ That's it. No Node.js. No WSL2. No build tools.
 | Prompt injection vulnerable | **Context isolation** — trusted instructions vs untrusted data |
 | Complex multi-tool setup | **Pure Python** — `pip install` and done |
 | No cost controls | **Cost tracking** per conversation, budget alerts |
+
+---
+
+## Quick Start
+
+```bash
+# Create Virtual Environment
+python3 -m venv <virtual-environment-name>
+
+# Activate Environment
+# ubuntu and macOD
+source <virtual-environment-name>/bin/activate
+# or
+# Windows
+sh ./<virtual-environment-name>/bin/Activate.sh 
+
+# Install
+pip install duckclaw
+
+# Configure (guided wizard)
+duckclaw setup
+
+# Start
+duckclaw start
+
+# Or just chat in terminal
+duckclaw chat
+```
+
+## **Requirements:** 
+Python 3.11+. That's it.
+> create virtual environment for better keeping all python module in one environment that will not effect other packages
+
+---
+
+## Permission System
+
+Every action DuckClaw takes is classified into one of four tiers:
+
+| Tier | Color | Examples | Behavior |
+|---|---|---|---|
+| **SAFE** | 🟢 | Answer questions, read memory | Auto-approved, silent |
+| **NOTIFY** | 🔵 | Browse web, read files | Auto-approved, user informed |
+| **ASK** | 🟡 | Screenshots, send messages, run commands | Requires explicit approval |
+| **BLOCK** | 🔴 | Delete system files, access credentials | Never allowed |
+
+```
+You: "Take a screenshot and analyze it"
+
+DuckClaw: ⚠️ Permission Required
+  Action: Take a screenshot of your screen
+  Risk: 🟢 Low  |  ✓ Reversible
+  [✗ Deny]  [✓ Approve]
+```
 
 ---
 
@@ -111,70 +167,140 @@ That's it. No Node.js. No WSL2. No build tools.
 | Web Dashboard | ✅ | Chat, memory, audit log, settings @ localhost:8741 | `dashboard/` |
 | One Command Install | ✅ | `pip install duckclaw && duckclaw start` — pure Python, no Node.js | `pyproject.toml` |
 
-### Coming in Sprint 4
-
-- 📦 PyPI publish (`pip install duckclaw`)
-- 🧪 Test suite (pytest — permissions, memory, skills)
-- 📖 Full documentation
-- 🎬 Demo video
-- 🔒 OS-level subprocess sandboxing (enforced CPU/memory limits)
-
----
-
-## Permission System
-
-Every action DuckClaw takes is classified into one of four tiers:
-
-| Tier | Color | Examples | Behavior |
-|---|---|---|---|
-| **SAFE** | 🟢 | Answer questions, read memory | Auto-approved, silent |
-| **NOTIFY** | 🔵 | Browse web, read files | Auto-approved, user informed |
-| **ASK** | 🟡 | Screenshots, send messages, run commands | Requires explicit approval |
-| **BLOCK** | 🔴 | Delete system files, access credentials | Never allowed |
-
-```
-You: "Take a screenshot and analyze it"
-
-DuckClaw: ⚠️ Permission Required
-  Action: Take a screenshot of your screen
-  Risk: 🟢 Low  |  ✓ Reversible
-  [✗ Deny]  [✓ Approve]
-```
-
----
-
-## Quick Start
-
-```bash
-# Install
-pip install duckclaw
-
-# Configure (guided wizard)
-duckclaw setup
-
-# Start
-duckclaw start
-
-# Or just chat in terminal
-duckclaw chat
-```
-
-**Requirements:** Python 3.11+. That's it.
-
 ---
 
 ## Architecture
 
+### Core
+
 ```
-Message → Orchestrator → Permission Engine → Action
-              ↕               ↕
-          LLM Router      Audit Log
-              ↕
-         Memory Store
-         (SQLite + ChromaDB)
+┌─────────────────────────────────────────────────────────────────┐
+│                         DUCKCLAW CORE                           │
+│                                                                 │
+│   ┌─────────────┐   ┌──────────────────┐   ┌─────────────────┐  │
+│   │  llm/       │   │  memory/         │   │  permissions/   │  │
+│   │  LiteLLM    │   │  SQLite (facts)  │   │  Engine 4-Tier  │  │
+│   │  Router     │   │  ChromaDB        │   │  + Audit Log    │  │
+│   │  100+ mdls  │   │  (vectors)       │   │  + Action       │  │
+│   │  cost track │   │  Extractor       │   │  Preview        │  │
+│   └──────┬──────┘   └────────┬─────────┘   └────────┬────────┘  │
+│          │                   │                      │           │
+│   ┌──────┴───────────────────┴──────────────────────┴───────┐   │
+│   │                  core/Orchestrator (FastAPI)            │   │
+│   └───┬──────────┬──────────────┬────────────┬──────────────┘   │
+│       │          │              │            │                  │
+│  ┌────┴───┐ ┌────┴────┐  ┌──────┴──────┐ ┌───┴────────────┐     │
+│  │bridges/│ │skills/  │  │  agent/     │ │ security/      │     │
+│  │Telegram│ │File Mgr │  │  Web Agent  │ │ Context        │     │
+│  │Discord │ │Web Srch │  │  (Playwright│ │ Isolation      │     │  
+│  │        │ │Shell Run│  │  + Screen / │ │ Prompt         │     │
+│  │        │ │Scheduler│  │    Camera)  │ │ Injection Def. │     │
+│  └────────┘ └─────────┘  └─────────────┘ └────────────────┘     │
+│                                                                 │
+│   ┌──────────────────────────────────────────────────────────┐  │
+│   │          dashboard/ (FastAPI + Jinja2) @ :8741           │  │
+│   │       Chat · Memory · Logs · Database · Settings         │  │
+│   └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 **Dashboard** at `localhost:8741` — Chat, Memory, Audit Log, Settings.
+
+### DuckClaw Labs Ecosystem
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            DuckClawLabs                                 │
+│                                                                         │
+│  ┌───────────────────────────┐       ┌──────────────────────────────┐   │
+│  │   Outside Skills          │       │   DuckClawSkills             │   │
+│  │   (from GitHub)           │       │   Built by DuckClaw Team     │   │
+│  │                           │       │                              │   │
+│  │  Any developer builds a   │       │  Official, verified skills   │   │
+│  │  skill in their own repo  │       │  maintained by DuckClaw Labs │   │
+│  └────────────┬──────────────┘       └──────────────┬───────────────┘   │
+│               │                                     │                   │
+│               └──────────────────┬──────────────────┘                   │
+│                                  ▼                                      │
+│              ┌───────────────────────────────────────┐                  │
+│              │             DuckClawHub               │                  │
+│              │  Central registry — manifests only    │                  │
+│              │  Browse / search / install skills     │                  │
+│              │  SHA-256 verification on publish      │                  │
+│              └───────────────────┬───────────────────┘                  │
+│                                  │                                      │
+│                   duckclaw skill install <name>                         │
+│                                  ▼                                      │
+│              ┌───────────────────────────────────────┐                  │
+│              │              DuckClaw(Core)           │                  │
+│              │  Core agent — installs skill,         │                  │
+│              │  registers actions into ChromaDB,     │                  │
+│              │  permission engine gates execution    │                  │
+│              └───────────────────────────────────────┘                  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+## STATUS 
+```
+DuckClawLabs
+  Outside Skills (From Github) - TODO
+  DuckClawSkills               - InProgress 
+  DuckClawHub                  - TODO
+  DuckClaw (Core)              - In Progress
+```
+
+
+#### Per-Action Knowledge Base
+
+Skills register **one ChromaDB row per action** (not per skill). This gives precise semantic retrieval:
+
+```
+User: "copy report.pdf to /backup/"
+  → ChromaDB returns: file_manager.copy   ← direct hit
+  → Permission engine: ASK tier → user approves
+  → Action executes + audit log entry written
+```
+
+Install official or community skills:
+
+```bash
+duckclaw skill install file_manager          # official
+duckclaw skill install github:user/my-skill  # community
+```
+
+### DuckClawHub — Not just another skill registry
+
+> ClawHub (OpenClaw) already exists. DuckClawHub is built for a different user.
+
+**ClawHub** = npm for agent tools. Developers sharing dev tools. No permission model. No audit. Requires Node.js.
+
+**DuckClawHub** = App Store for trusted AI actions. You see exactly what a skill can do before it does anything.
+
+#### Trust Score per skill
+```
+file_manager v1.2  ★ Trust: 94/100
+  ✅ file_manager.read    → SAFE    (auto-allowed)
+  ⚠️  file_manager.write  → NOTIFY  (you'll be told)
+  🔐 shell_runner.run    → ASK     (always asks first)
+```
+
+#### Permission Preview before install
+```bash
+duckclaw skill preview file_manager
+
+  Before installing, this skill will need:
+  → Read files from your disk      [SAFE   — auto allowed]
+  → Write files to your disk       [NOTIFY — you'll be told]
+  → Run shell commands             [ASK    — always asks first]
+
+  Install anyway? (y/n)
+```
+
+#### Skill Recipes — outcomes, not just tools
+```bash
+duckclaw recipe install research-and-save
+# Uses: web_search.search → file_manager.write
+# Trust: 87/100  |  Permissions: SAFE + NOTIFY
+```
 
 ---
 
@@ -182,16 +308,16 @@ Message → Orchestrator → Permission Engine → Action
 
 DuckClaw uses `~/.duckclaw/duckclaw.yaml`. See [duckclaw.yaml.example](duckclaw.yaml.example) for all options.
 
-Default model: **Claude Haiku** (fast, cheap).
-Free alternative: **Gemini 2.0 Flash** (set during `duckclaw setup`).
-
 ---
 
-## Roadmap
+## Core Principles
 
-See [ROADMAP.md](ROADMAP.md) for the full 30-day plan.
-
-**30 days → 27 features → GitHub launch.**
+1. **Safe by default** — trustworthy out of the box, not after hours of config
+2. **Transparent always** — audit log shows everything the agent did and why
+3. **Local first** — your data stays on your machine; cloud is opt-in
+4. **Python simple** — one language, one install command, no build tools
+5. **Permission, not forgiveness** — ask before acting, not apologize after
+6. **Quality over quantity** — 5 secure skills beat 13,700 unvetted ones
 
 ---
 
@@ -200,8 +326,6 @@ See [ROADMAP.md](ROADMAP.md) for the full 30-day plan.
 DuckClaw is MIT licensed and built in public.
 Issues, PRs, and ideas welcome.
 
-> *AI assistance you can actually trust — because it works with you, not around you.*
-
 ---
 
-**⭐ Star this repo if you believe AI assistants should ask before they act.**
+**⭐ Star this repo if you believe AI assistants should work as per user permissions**

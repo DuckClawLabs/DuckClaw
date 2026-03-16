@@ -270,6 +270,52 @@
     color: var(--accent);
   }
 
+  /* Recent conversations */
+  .recent-convos {
+    width: 100%;
+    max-width: 520px;
+    margin-top: 4px;
+    text-align: left;
+  }
+  .recent-convos-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .convo-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 6px;
+  }
+  .convo-item:hover {
+    border-color: rgba(245,158,11,0.35);
+    background: rgba(245,158,11,0.04);
+  }
+  .convo-snippet {
+    flex: 1;
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .convo-date {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    font-family: var(--font-mono);
+  }
+
   .capture-preview {
     display: block;
     margin-top: 10px;
@@ -306,6 +352,11 @@
         <div class="starter-pill" onclick="sendStarter(this)">What do you remember about me?</div>
         <div class="starter-pill" onclick="sendStarter(this)">Search the web for something</div>
         <div class="starter-pill" onclick="sendStarter(this)">Help me write something</div>
+      </div>
+      <!-- Recent conversations -->
+      <div class="recent-convos" id="recentConvos" style="display:none">
+        <div class="recent-convos-title">Recent Conversations</div>
+        <div id="recentConvosList"></div>
       </div>
     </div>
 
@@ -581,8 +632,64 @@
     inp.focus();
   }
 
+  // ── Recent Conversations ───────────────────────────────────────────────────
+  async function loadRecentSessions() {
+    try {
+      const data = await fetch('/api/db/conversations?role=user&limit=200').then(r => r.json());
+      const msgs = data.conversations || [];
+      if (!msgs.length) return;
+
+      // Group by session_id, keep earliest message per session
+      const sessions = {};
+      for (const m of msgs) {
+        if (!sessions[m.session_id]) {
+          sessions[m.session_id] = { snippet: m.content, date: m.created_at };
+        }
+      }
+
+      const entries = Object.entries(sessions).slice(0, 8); // max 8 recent
+      if (!entries.length) return;
+
+      const list = document.getElementById('recentConvosList');
+      list.innerHTML = entries.map(([sid, info]) => {
+        const snippet = info.snippet.length > 60 ? info.snippet.slice(0, 60) + '…' : info.snippet;
+        const date = info.date ? info.date.slice(0, 10) : '';
+        return `<div class="convo-item" onclick="resumeSession('${sid.replace(/'/g,"\\'")}')">
+          <span style="font-size:14px">💬</span>
+          <span class="convo-snippet">${esc(snippet)}</span>
+          <span class="convo-date">${date}</span>
+        </div>`;
+      }).join('');
+
+      document.getElementById('recentConvos').style.display = '';
+    } catch(e) { /* silently skip if API not ready */ }
+  }
+
+  async function resumeSession(sid) {
+    try {
+      const data = await fetch(`/api/db/conversations?session_id=${encodeURIComponent(sid)}&limit=200`).then(r => r.json());
+      const msgs = (data.conversations || []).reverse(); // oldest first
+      if (!msgs.length) return;
+
+      // Hide welcome, set session
+      document.getElementById('welcome').style.display = 'none';
+      sessionId = sid;
+
+      for (const m of msgs) {
+        if (m.role === 'user' || m.role === 'assistant') {
+          appendMessage(m.role, m.content);
+        }
+      }
+    } catch(e) { console.error('Failed to resume session', e); }
+  }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
   // ── Init ───────────────────────────────────────────────────────────────────
   connectWS();
   input.focus();
+  loadRecentSessions();
 </script>
 {% endblock %}

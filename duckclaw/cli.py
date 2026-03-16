@@ -152,6 +152,22 @@ def chat(model):
 
     console.print("[bold green]💬 DuckClaw Chat[/bold green] [dim](type '/exit' to quit · '/new' for new conversation · '/clear' to reset screen)[/dim]\n")
 
+    # Notify about specialist models — load config to show current state
+    try:
+        from duckclaw.core.config import load_config as _lc
+        _cfg = _lc()
+        _reasoning = _cfg.llm.reasoning_model or f"[dim](same as primary: {_cfg.llm.model})[/dim]"
+        _vision    = _cfg.llm.vision_model    or "[dim](auto-detect / gemini fallback)[/dim]"
+        _audio     = _cfg.llm.audio_model     or "[dim](gemini/gemini-2.0-flash)[/dim]"
+        console.print(
+            f"[dim]  🧠 Reasoning model: [/dim]{_reasoning}\n"
+            f"[dim]  👁  Vision model:    [/dim]{_vision}\n"
+            f"[dim]  🔊 Audio model:     [/dim]{_audio}\n"
+            f"[dim]  ℹ️  Update vision/audio models + API keys at [bold]http://127.0.0.1:8741/settings[/bold][/dim]\n"
+        )
+    except Exception:
+        pass
+
     async def _chat_loop():
         from duckclaw.core.config import load_config
         from duckclaw.core.orchestrator import Orchestrator
@@ -162,6 +178,34 @@ def chat(model):
 
         orchestrator = Orchestrator(config)
         await orchestrator.initialize()
+
+        # ── Terminal approval callback ─────────────────────────────────────────
+        # Runs when an ASK-tier action needs user approval.
+        # Uses questionary so it works cleanly in the terminal (no spinner clash).
+        async def _terminal_approval_callback(preview) -> bool:
+            risk_emoji = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(preview.risk_level, "⚪")
+            rev_str = "✓ Reversible" if preview.reversible else "✗ Irreversible"
+            console.print(f"\n[bold yellow]⚠️  Permission Required[/bold yellow]")
+            console.print(f"  [bold]Action:[/bold] {preview.description}")
+            console.print(f"  [dim]{risk_emoji} Risk: {preview.risk_level.upper()}  |  {rev_str}[/dim]")
+            if preview.details:
+                for k, v in preview.details.items():
+                    console.print(f"  [dim]{k}:[/dim] {v}")
+            console.print()
+            try:
+                answer = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: questionary.confirm("Approve this action?", default=False).ask(),
+                )
+                return bool(answer)
+            except (EOFError, KeyboardInterrupt):
+                return False
+
+        async def _terminal_notify_callback(message: str):
+            console.print(f"[dim]  ℹ️  {message}[/dim]")
+
+        orchestrator.permissions.set_approval_callback(_terminal_approval_callback)
+        orchestrator.permissions.set_notify_callback(_terminal_notify_callback)
 
         def _new_session_id():
             import uuid
@@ -191,12 +235,14 @@ def chat(model):
                 console.print(f"\n[bold green]✦ New conversation started[/bold green] [dim](session {session_id})[/dim]\n")
                 continue
 
-            with console.status("[dim]Thinking...[/dim]"):
-                response = await orchestrator.chat(
-                    message=user_input,
-                    session_id=session_id,
-                    source="terminal",
-                )
+            # Show thinking indicator as plain text (no spinner) so the
+            # approval callback can print cleanly without interference.
+            console.print("[dim]Thinking...[/dim]")
+            response = await orchestrator.chat(
+                message=user_input,
+                session_id=session_id,
+                source="terminal",
+            )
 
             console.print(f"[bold yellow]DuckClaw:[/bold yellow] {response['reply']}\n")
             if response.get("image_path"):
@@ -302,6 +348,10 @@ def _write_config(config_dir: str, model_name: str, dashboard_port: str, enable_
 
 llm:
   model: "{model_name}"
+  # Specialist models — leave blank to use the primary model as fallback
+  reasoning_model: ""   # e.g. claude-sonnet-4-5-20251001, deepseek/deepseek-r1
+  vision_model: ""      # e.g. gemini/gemini-2.0-flash — add GEMINI_API_KEY to .env
+  audio_model: ""       # e.g. gemini/gemini-2.0-flash or groq/whisper-large-v3
   cost_tracking: true
   max_tokens: 4096
   temperature: 0.7
