@@ -1,17 +1,3 @@
-add 3 types of model reasoning, vision, audio models, use it wherever it requires, 
-take it from
-reasoning from UI and terminal -> notify like you can update vision, audio model from UI with keys 
-
-DONE - in chat, if permission required, please give a pop up, dont ask in the chat session as message
-
-i want skill permission should handle through web, he can change 4-tier if user want 
-file logs are not showing properly - check, 
-in settings have one tab for permission, multiple tabs for multiple details
-
-scheduling once server stops, the jobs gets destroyed.
-can we resolve this issue
-
-
 
 feature separation documentation that users can understand
 features vs OS availability
@@ -19,20 +5,3 @@ features vs UI/terminal availability
 features vs install requirements
 we should provide one shell script that can install whichever features are required
 he can select, create automatic shell script, and give them to that it can download duckclaw with features
-
-
-
-Web dashboard
-- Settings / port should not be changed 
-- Database / Facts - TECHNICAL - change facts logic, it should extract about person personality
-- Chat / Conversations Should be listed after clicking Chat 
-- Database facts are getting deleted , similarly memory tab
-
-
-
-Can you build smart intelligence agent system
-
-we have not build smart Intelligence agent layer, we have built the orchestrator, that routes to only-one-skill only 
-and we are dependent on knowledge base, --> we have to update, it has to be most Intelligent by far all other systems in the world that i should 
-response to any questionary, plan and execute - i want to build a system that is so Intelligent with model connection.
-you can use any tools, search for papers, you can any software, github code, anything in the world, i want you to build one smart system that works orchestrator and user questions and edit and remove, update any file

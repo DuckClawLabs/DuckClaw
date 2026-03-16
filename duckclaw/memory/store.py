@@ -35,6 +35,17 @@ CREATE INDEX IF NOT EXISTS idx_ingested_at ON ingested_files(ingested_at DESC);
 """
 
 
+SCHEDULED_JOBS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS scheduled_jobs (
+    id           TEXT PRIMARY KEY,
+    trigger_type TEXT NOT NULL,
+    trigger_data TEXT NOT NULL,
+    message      TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+
 CONVERSATIONS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,6 +98,7 @@ class MemoryStore:
         self._db.row_factory = sqlite3.Row
         self._db.executescript(CONVERSATIONS_SCHEMA)
         self._db.executescript(INGESTED_SCHEMA)
+        self._db.executescript(SCHEDULED_JOBS_SCHEMA)
         self._db.commit()
 
         # ChromaDB (embedded — no server needed)
@@ -477,6 +489,34 @@ class MemoryStore:
             "total_sessions": session_count,
             "semantic_index_size": chroma_count,
         }
+
+    # ─── Scheduled Jobs ───────────────────────────────────────────────────────
+
+    def save_scheduled_job(
+        self, job_id: str, trigger_type: str, trigger_data: dict, message: str
+    ) -> None:
+        """Persist a scheduled job so it survives server restarts."""
+        self._db.execute(
+            "INSERT OR REPLACE INTO scheduled_jobs (id, trigger_type, trigger_data, message)"
+            " VALUES (?, ?, ?, ?)",
+            (job_id, trigger_type, json.dumps(trigger_data), message),
+        )
+        self._db.commit()
+
+    def load_scheduled_jobs(self) -> list[dict]:
+        """Load all persisted scheduled jobs (called at startup)."""
+        rows = self._db.execute("SELECT * FROM scheduled_jobs").fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["trigger_data"] = json.loads(d["trigger_data"])
+            result.append(d)
+        return result
+
+    def delete_scheduled_job(self, job_id: str) -> None:
+        """Remove a persisted scheduled job by ID."""
+        self._db.execute("DELETE FROM scheduled_jobs WHERE id = ?", (job_id,))
+        self._db.commit()
 
     def close(self):
         """Close database connections."""

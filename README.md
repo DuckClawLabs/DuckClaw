@@ -180,7 +180,8 @@ DuckClawLabs
   DuckClawHub                  - TODO
   DuckClaw (Core)              - In Progress
 ```
-
+### Vision
+![DuckClawLabsVision](DuckClawLabsVision.png)
 
 #### Per-Action Knowledge Base
 

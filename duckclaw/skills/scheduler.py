@@ -6,7 +6,7 @@ Background tasks default to Tier: NOTIFY (inform, don't act without approval).
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from duckclaw.skills.base import BaseSkill, SkillPermission, SkillResult
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 # Global scheduler instance (shared across skills)
 _scheduler = None
 _notify_callback: Optional[Callable] = None
+_memory_store = None  # set via set_memory_store() for job persistence
 
 
 def get_scheduler():
@@ -37,8 +38,30 @@ def set_notification_callback(callback: Callable):
     _notify_callback = callback
 
 
+def set_memory_store(store) -> None:
+    """Wire up the memory store for job persistence across restarts."""
+    global _memory_store
+    _memory_store = store
+
+
+def _persist_job(job_id: str, trigger_type: str, trigger_data: dict, message: str) -> None:
+    if _memory_store:
+        try:
+            _memory_store.save_scheduled_job(job_id, trigger_type, trigger_data, message)
+        except Exception as e:
+            logger.warning(f"Failed to persist job {job_id}: {e}")
+
+
+def _unpersist_job(job_id: str) -> None:
+    if _memory_store:
+        try:
+            _memory_store.delete_scheduled_job(job_id)
+        except Exception as e:
+            logger.warning(f"Failed to remove persisted job {job_id}: {e}")
+
+
 async def _fire_reminder(message: str, job_id: str):
-    """Called when a scheduled job fires."""
+    """Called when a recurring (cron) job fires — does NOT remove from DB."""
     if _notify_callback:
         try:
             await _notify_callback(f"⏰ Reminder: {message}")
@@ -46,6 +69,66 @@ async def _fire_reminder(message: str, job_id: str):
             logger.error(f"Failed to send reminder notification: {e}")
     else:
         logger.info(f"Scheduled reminder fired (no callback): {message}")
+
+
+async def _fire_once_reminder(message: str, job_id: str):
+    """Called when a one-shot (date) job fires — removes itself from DB."""
+    _unpersist_job(job_id)
+    await _fire_reminder(message, job_id)
+
+
+def restore_jobs(memory_store) -> None:
+    """
+    Re-schedule all persisted jobs from SQLite after a server restart.
+    Call this once during startup after the memory store is ready.
+    """
+    set_memory_store(memory_store)
+    scheduler = get_scheduler()
+    if not scheduler:
+        return
+
+    jobs = memory_store.load_scheduled_jobs()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    restored = 0
+    for job in jobs:
+        job_id = job["id"]
+        trigger_type = job["trigger_type"]
+        trigger_data = job["trigger_data"]
+        message = job["message"]
+        try:
+            if trigger_type == "date":
+                run_date = datetime.fromisoformat(trigger_data["run_date"])
+                run_date_naive = run_date.replace(tzinfo=None)
+                # Discard stale one-shot jobs older than 1 hour
+                if (now - run_date_naive).total_seconds() > 3600:
+                    memory_store.delete_scheduled_job(job_id)
+                    logger.info(f"Discarded stale job {job_id} (was due {run_date_naive})")
+                    continue
+                scheduler.add_job(
+                    _fire_once_reminder, "date",
+                    run_date=run_date_naive,
+                    args=[message, job_id],
+                    id=job_id,
+                    replace_existing=True,
+                )
+            elif trigger_type == "cron":
+                scheduler.add_job(
+                    _fire_reminder, "cron",
+                    minute=trigger_data.get("minute", "*"),
+                    hour=trigger_data.get("hour", "*"),
+                    day=trigger_data.get("day", "*"),
+                    month=trigger_data.get("month", "*"),
+                    day_of_week=trigger_data.get("day_of_week", "*"),
+                    args=[message, job_id],
+                    id=job_id,
+                    replace_existing=True,
+                )
+            restored += 1
+            logger.info(f"Restored job {job_id} ({trigger_type})")
+        except Exception as e:
+            logger.warning(f"Failed to restore job {job_id}: {e}")
+
+    logger.info(f"Scheduler restore complete: {restored}/{len(jobs)} jobs active")
 
 
 class SchedulerSkill(BaseSkill):
@@ -96,13 +179,14 @@ class SchedulerSkill(BaseSkill):
         job_id = f"reminder_{run_at.strftime('%Y%m%d%H%M%S')}"
 
         scheduler.add_job(
-            _fire_reminder,
+            _fire_once_reminder,
             "date",
             run_date=run_at,
             args=[message, job_id],
             id=job_id,
             replace_existing=True,
         )
+        _persist_job(job_id, "date", {"run_date": run_at.isoformat()}, message)
 
         time_str = f"{hours}h {minutes}m" if hours else f"{minutes}m"
         logger.info(f"Scheduled reminder with job_id {job_id} to fire at {run_at.isoformat()} (in {time_str})")
@@ -154,9 +238,10 @@ class SchedulerSkill(BaseSkill):
         logger.info(f"Scheduling reminder with message: '{message}' to fire at {run_at.isoformat()}")
         job_id = f"remind_at_{run_at.strftime('%Y%m%d%H%M')}"
         scheduler.add_job(
-            _fire_reminder, "date",
+            _fire_once_reminder, "date",
             run_date=run_at, args=[message, job_id], id=job_id, replace_existing=True,
         )
+        _persist_job(job_id, "date", {"run_date": run_at.isoformat()}, message)
         remind_sr = SkillResult(
             success=True,
             data=f"⏰ Reminder set for {run_at.strftime('%H:%M on %b %d')}: '{message}'",
@@ -201,6 +286,10 @@ class SchedulerSkill(BaseSkill):
             minute=minute, hour=hour, day=day, month=month, day_of_week=dow,
             args=[message or label, job_id], id=job_id, replace_existing=True,
         )
+        _persist_job(job_id, "cron", {
+            "minute": minute, "hour": hour, "day": day,
+            "month": month, "day_of_week": dow,
+        }, message or label)
 
         cron_sr = SkillResult(
             success=True,
@@ -244,6 +333,7 @@ class SchedulerSkill(BaseSkill):
 
         try:
             scheduler.remove_job(job_id)
+            _unpersist_job(job_id)
             remove_sr = SkillResult(success=True, data=f"Removed job: {job_id}")
             logger.info(f"Remove job action returning SkillResult: {remove_sr}")
             return remove_sr
@@ -272,6 +362,9 @@ class SchedulerSkill(BaseSkill):
             args=["Good morning! Ready for your daily briefing?", "morning_brief"],
             id="morning_brief", replace_existing=True,
         )
+        _persist_job("morning_brief", "cron", {"minute": str(m), "hour": str(h),
+                                                "day": "*", "month": "*", "day_of_week": "*"},
+                     "Good morning! Ready for your daily briefing?")
 
         morning_brief_sr = SkillResult(
             success=True,

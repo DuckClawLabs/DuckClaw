@@ -106,6 +106,13 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"Could not auto-seed skills KB: {e}")
 
+        # Restore scheduled jobs persisted before the last shutdown
+        try:
+            from duckclaw.skills.scheduler import restore_jobs
+            restore_jobs(self.memory)
+        except Exception as e:
+            logger.warning(f"Could not restore scheduled jobs: {e}")
+
         self._initialized = True
         logger.info(
             f"DuckClaw Orchestrator initialized — "
