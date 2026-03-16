@@ -104,10 +104,9 @@ class ScreenCaptureSkill(BaseSkill):
         if not b64 or not self._llm:
             return capture_result
 
-        # Send to LLM vision — must use a vision-capable model (Groq doesn't support multimodal)
+        # Send to LLM vision — routes through chat_vision which validates model capability
         try:
-            vision_model = self._llm.get_vision_model()
-            response = await self._llm.chat(
+            response = await self._llm.chat_vision(
                 messages=[
                     {
                         "role": "user",
@@ -122,7 +121,6 @@ class ScreenCaptureSkill(BaseSkill):
                         ],
                     }
                 ],
-                model=vision_model,
             )
 
             return SkillResult(
@@ -134,12 +132,19 @@ class ScreenCaptureSkill(BaseSkill):
                     "image_base64": b64,
                     "width": capture_result.metadata.get("width"),
                     "height": capture_result.metadata.get("height"),
+                    "saved_path": capture_result.metadata.get("saved_path"),
                 },
             )
 
+        except ValueError as e:
+            # Model capability error — surface directly so user knows to fix settings
+            return SkillResult(
+                success=False,
+                error=str(e),
+                metadata=capture_result.metadata,
+            )
         except Exception as e:
             logger.warning(f"Vision analysis failed: {e}")
-            # Return image even if analysis fails
             return SkillResult(
                 success=True,
                 data=f"Screenshot captured but vision analysis failed: {e}",

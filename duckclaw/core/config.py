@@ -26,9 +26,9 @@ ENV_PATHS = [
 class LLMConfig:
     model: str = "claude-haiku-4-5-20251001"
     # Specialist model slots — empty string means "use primary model"
-    reasoning_model: str = ""   # Used for reflection + synthesis (complex reasoning)
-    vision_model: str = ""      # Used for image/screenshot analysis (auto-fallback: gemini/gemini-2.0-flash)
-    audio_model: str = ""       # Used for audio transcription/analysis (default: gemini/gemini-2.0-flash)
+    reasoning_model: str = ""   # Used for reflection + synthesis; empty = use primary model
+    vision_model: str = ""      # Used for image/screenshot analysis; empty = use primary model
+    tts_model: str = ""         # Used for text-to-speech synthesis; empty = use primary model
     cost_tracking: bool = True
     max_tokens: int = 4096
     temperature: float = 0.7
@@ -118,7 +118,7 @@ def load_config() -> DuckClawConfig:
             model=llm_raw.get("model", config.llm.model),
             reasoning_model=llm_raw.get("reasoning_model", config.llm.reasoning_model),
             vision_model=llm_raw.get("vision_model", config.llm.vision_model),
-            audio_model=llm_raw.get("audio_model", config.llm.audio_model),
+            tts_model=llm_raw.get("tts_model", config.llm.tts_model),
             cost_tracking=llm_raw.get("cost_tracking", config.llm.cost_tracking),
             max_tokens=llm_raw.get("max_tokens", config.llm.max_tokens),
             temperature=llm_raw.get("temperature", config.llm.temperature),

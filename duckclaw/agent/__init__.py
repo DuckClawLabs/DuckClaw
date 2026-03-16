@@ -13,7 +13,7 @@ No separate intent classifier or planner — the model does that reasoning itsel
 New skills added to knowledge_base.py are automatically available to the model.
 """
 
-from duckclaw.agent.react_engine import ReActEngine, ReActResult, AgentStep
+from duckclaw.agent.react_engine_v3 import ReActEngineV3 as ReActEngine, ReActV3Result as ReActResult, StepResult as AgentStep
 from duckclaw.agent.reflection import ReflectionAgent, ReflectionResult
 from duckclaw.agent.synthesizer import ResponseSynthesizer
 

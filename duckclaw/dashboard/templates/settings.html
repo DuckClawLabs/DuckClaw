@@ -53,6 +53,20 @@
   }
   .input-cell { padding: 8px 0; vertical-align: middle; }
 
+  /* ── Eye toggle button ────────────────────────────────────────── */
+  .eye-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 3px 6px;
+    line-height: 1;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .eye-btn:hover { border-color: var(--accent); color: var(--accent); }
+
   /* ── Info tooltip ─────────────────────────────────────────────── */
   .info-wrap {
     position: relative;
@@ -233,6 +247,10 @@
                 <option value="gemini/gemini-2.0-flash">
                 <option value="groq/llama3-70b-8192">
               </datalist>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+                <input name="keys.primary_model_key" type="password" value="{{ env_keys.get('PRIMARY_MODEL_KEY', '') if env_keys is defined else '' }}" placeholder="PRIMARY_MODEL_KEY" style="width:240px;" autocomplete="new-password" />
+                <button type="button" class="eye-btn" onclick="toggleKey(this)" title="Show/hide key">👁</button>
+              </div>
             </td>
           </tr>
           <tr>
@@ -254,6 +272,10 @@
                 <option value="groq/deepseek-r1-distill-llama-70b">
                 <option value="gemini/gemini-2.0-flash-thinking-exp">
               </datalist>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+                <input name="keys.reasoning_api_key" type="password" value="{{ env_keys.get('REASONING_API_KEY', '') if env_keys is defined else '' }}" placeholder="REASONING_API_KEY" style="width:240px;" autocomplete="new-password" />
+                <button type="button" class="eye-btn" onclick="toggleKey(this)" title="Show/hide key">👁</button>
+              </div>
             </td>
           </tr>
           <tr>
@@ -277,32 +299,34 @@
                 <option value="gpt-4o">
                 <option value="gpt-4-turbo">
               </datalist>
-              <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">
-                💡 Add API key to <code style="font-family:var(--font-mono);">~/.duckclaw/.env</code> — e.g. <code style="font-family:var(--font-mono);">GEMINI_API_KEY=...</code> or <code style="font-family:var(--font-mono);">ANTHROPIC_API_KEY=...</code>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+                <input name="keys.vision_api_key" type="password" value="{{ env_keys.get('VISION_API_KEY', '') if env_keys is defined else '' }}" placeholder="VISION_API_KEY" style="width:240px;" autocomplete="new-password" />
+                <button type="button" class="eye-btn" onclick="toggleKey(this)" title="Show/hide key">👁</button>
               </div>
             </td>
           </tr>
           <tr>
             <td class="label-cell">
-              <div class="info-wrap">Audio model
+              <div class="info-wrap">Text to speech
                 <span class="info-btn">i</span>
-                <div class="info-tip"><div class="tip-title">Audio model</div>
-                  Used for audio transcription and voice input processing.
-                  Default: <code>gemini/gemini-2.0-flash</code> (supports audio natively, free tier available).
+                <div class="info-tip"><div class="tip-title">Text to speech model</div>
+                  Used for text-to-speech synthesis and voice output.
+                  Default: <code>gemini/gemini-2.0-flash</code> (supports TTS natively, free tier available).
                   Requires <code>GEMINI_API_KEY</code> in <code>~/.duckclaw/.env</code>.
                   Alternative: <code>groq/whisper-large-v3</code> (fast, free tier).
                 </div>
               </div>
             </td>
             <td class="input-cell">
-              <input name="llm.audio_model" type="text" value="{{ config.llm.audio_model }}" list="audio-suggestions" style="width:260px;" placeholder="gemini/gemini-2.0-flash" />
-              <datalist id="audio-suggestions">
+              <input name="llm.tts_model" type="text" value="{{ config.llm.tts_model }}" list="tts-suggestions" style="width:260px;" placeholder="gemini/gemini-2.0-flash" />
+              <datalist id="tts-suggestions">
                 <option value="gemini/gemini-2.0-flash">
                 <option value="groq/whisper-large-v3">
                 <option value="groq/whisper-large-v3-turbo">
               </datalist>
-              <div style="font-size:10px;color:var(--text-muted);margin-top:4px;">
-                💡 Requires API key — <code style="font-family:var(--font-mono);">GEMINI_API_KEY=...</code> or <code style="font-family:var(--font-mono);">GROQ_API_KEY=...</code>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+                <input name="keys.audio_api_key" type="password" value="{{ env_keys.get('AUDIO_API_KEY', '') if env_keys is defined else '' }}" placeholder="AUDIO_API_KEY" style="width:240px;" autocomplete="new-password" />
+                <button type="button" class="eye-btn" onclick="toggleKey(this)" title="Show/hide key">👁</button>
               </div>
             </td>
           </tr>
@@ -516,12 +540,12 @@
             </td>
             <td class="input-cell">
               <input name="dashboard.port" type="number" value="{{ config.dashboard.port }}" style="width:100px;opacity:0.5;cursor:not-allowed;" readonly />
-              <span style="font-size:10px;color:var(--text-muted);margin-left:8px;">Change via <code style="font-family:var(--font-mono);">~/.duckclaw/config.yaml</code></span>
+              <span style="font-size:10px;color:var(--text-muted);margin-left:8px;">Change via <code style="font-family:var(--font-mono);">~/.duckclaw/duckclaw.yaml</code></span>
             </td>
           </tr>
         </table>
         <div style="margin-top:14px;">
-          <button type="submit" class="save-rules-btn">Save Dashboard Settings</button>
+          <!-- <button type="submit" class="save-rules-btn">Save Dashboard Settings</button> -->
           <span style="font-size:11px;color:var(--text-muted);margin-left:12px;">Restart required to apply.</span>
         </div>
       </div>
@@ -602,6 +626,18 @@ function showBanner(msg, ok) {
   setTimeout(() => { b.style.display = 'none'; }, 4000);
 }
 
+// ── Eye toggle for API key fields ─────────────────────────────────
+function toggleKey(btn) {
+  const input = btn.previousElementSibling;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁';
+  }
+}
+
 // ── Save helpers (generic settings POST) ──────────────────────────
 async function saveSettings(body) {
   const res  = await fetch('/api/settings', {
@@ -619,15 +655,23 @@ document.getElementById('form-llm').addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target;
   try {
-    await saveSettings({ llm: {
-      model:           f['llm.model'].value.trim(),
-      reasoning_model: f['llm.reasoning_model'].value.trim(),
-      vision_model:    f['llm.vision_model'].value.trim(),
-      audio_model:     f['llm.audio_model'].value.trim(),
-      max_tokens:      parseInt(f['llm.max_tokens'].value),
-      temperature:     parseFloat(f['llm.temperature'].value),
-      cost_tracking:   f['llm.cost_tracking'].checked,
-    }});
+    await saveSettings({
+      llm: {
+        model:           f['llm.model'].value.trim(),
+        reasoning_model: f['llm.reasoning_model'].value.trim(),
+        vision_model:    f['llm.vision_model'].value.trim(),
+        tts_model:       f['llm.tts_model'].value.trim(),
+        max_tokens:      parseInt(f['llm.max_tokens'].value),
+        temperature:     parseFloat(f['llm.temperature'].value),
+        cost_tracking:   f['llm.cost_tracking'].checked,
+      },
+      keys: {
+        primary_model_key: f['keys.primary_model_key'].value,
+        reasoning_api_key: f['keys.reasoning_api_key'].value,
+        vision_api_key:    f['keys.vision_api_key'].value,
+        audio_api_key:     f['keys.audio_api_key'].value,
+      },
+    });
     showBanner('AI settings saved. Restart DuckClaw to apply.', true);
   } catch (err) { showBanner(err.message, false); }
 });

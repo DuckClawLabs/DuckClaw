@@ -1,10 +1,7 @@
 """
 DuckClaw LLM Router.
 Unified interface for 100+ models via LiteLLM.
-Features: cost tracking, auto-failover, smart routing.
-
-Primary: Claude (Anthropic) — private API key
-Free fallback: Gemini 2.0 Flash (Google AI Studio)
+Features: cost tracking, smart routing.
 """
 
 import time
@@ -72,7 +69,7 @@ class RouterStats:
 
 class LLMRouter:
     """
-    Routes LLM calls to the configured model with auto-failover.
+    Routes LLM calls to the configured model.
 
     Usage:
         router = LLMRouter(config.llm)
@@ -90,11 +87,9 @@ class LLMRouter:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         system_prompt: Optional[str] = None,
+        api_key: Optional[str] = None,
     ) -> str:
-        """
-        Send messages to LLM and return text response.
-        Automatically falls back to next model on failure.
-        """
+        """Send messages to LLM and return text response."""
         target_model = model or self.config.model
         max_tok = max_tokens or self.config.max_tokens
         temp = temperature if temperature is not None else self.config.temperature
@@ -105,7 +100,7 @@ class LLMRouter:
             full_messages.append({"role": "system", "content": system_prompt})
         full_messages.extend(messages)
 
-        return await self._call(target_model, full_messages, max_tok, temp)
+        return await self._call(target_model, full_messages, max_tok, temp, api_key=api_key)
 
     async def _call(
         self,
@@ -113,19 +108,25 @@ class LLMRouter:
         messages: list[dict],
         max_tokens: int,
         temperature: float,
+        api_key: Optional[str] = None,
     ) -> str:
         """Make a single LLM API call and record stats."""
         start = time.monotonic()
         self.stats.total_calls += 1
 
         try:
-            response = await acompletion(
+            import os
+            resolved_key = api_key or os.environ.get("PRIMARY_MODEL_KEY") or None
+            call_kwargs: dict[str, Any] = dict(
                 model=model,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 timeout=self.config.timeout,
             )
+            if resolved_key:
+                call_kwargs["api_key"] = resolved_key
+            response = await acompletion(**call_kwargs)
 
             latency_ms = (time.monotonic() - start) * 1000
             usage = response.usage
@@ -206,23 +207,16 @@ class LLMRouter:
                 yield chunk.choices[0].delta.content
 
     def get_reasoning_model(self) -> str:
-        """Return the reasoning model. Falls back to primary model if not configured."""
+        """Return the reasoning model, or primary model if not configured."""
         return self.config.reasoning_model or self.config.model
 
     def get_vision_model(self) -> str:
-        """Return a vision-capable model. Uses configured vision_model, else auto-detects from primary, else Gemini fallback."""
-        if self.config.vision_model:
-            return self.config.vision_model
-        model = self.config.model
-        vision_prefixes = ("claude", "gemini", "gpt-4o", "gpt-4-vision", "gpt-4-turbo")
-        if any(model.startswith(p) or f"/{p}" in model for p in vision_prefixes):
-            return model
-        # Primary model doesn't support vision — use free Gemini fallback
-        return "gemini/gemini-2.0-flash"
+        """Return the vision model, or primary model if not configured."""
+        return self.config.vision_model or self.config.model
 
-    def get_audio_model(self) -> str:
-        """Return the audio model. Defaults to gemini/gemini-2.0-flash (supports audio natively)."""
-        return self.config.audio_model or "gemini/gemini-2.0-flash"
+    def get_tts_model(self) -> str:
+        """Return the text-to-speech model, or primary model if not configured."""
+        return self.config.tts_model or self.config.model
 
     async def chat_reasoning(
         self,
@@ -232,12 +226,14 @@ class LLMRouter:
         temperature: Optional[float] = None,
     ) -> str:
         """Send messages using the configured reasoning model."""
+        import os
         return await self.chat(
             messages=messages,
             model=self.get_reasoning_model(),
             system_prompt=system_prompt,
             max_tokens=max_tokens,
             temperature=temperature,
+            api_key=os.environ.get("REASONING_API_KEY") or None,
         )
 
     async def chat_vision(
@@ -247,29 +243,53 @@ class LLMRouter:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
     ) -> str:
-        """Send messages using the configured vision model."""
+        """Send messages using the configured vision model.
+
+        Raises ValueError if the resolved model does not support image input,
+        so the caller gets a clear message instead of a cryptic API error.
+        """
+        vision_model = self.get_vision_model()
+
+        # Groq and several other providers reject multimodal content arrays.
+        # Guard here so the error is actionable.
+        has_image = any(
+            isinstance(m.get("content"), list) and
+            any(p.get("type") == "image_url" for p in m["content"])
+            for m in messages
+        )
+        if has_image and not litellm.supports_vision(model=vision_model):
+            raise ValueError(
+                f"Model '{vision_model}' does not support image input. "
+                "Set a vision-capable model (e.g. gemini/gemini-2.0-flash or "
+                "claude-haiku-4-5-20251001) under Settings → Vision model."
+            )
+
+        import os
         return await self.chat(
             messages=messages,
-            model=self.get_vision_model(),
+            model=vision_model,
             system_prompt=system_prompt,
             max_tokens=max_tokens,
             temperature=temperature,
+            api_key=os.environ.get("VISION_API_KEY") or None,
         )
 
-    async def chat_audio(
+    async def chat_tts(
         self,
         messages: list[dict],
         system_prompt: Optional[str] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
     ) -> str:
-        """Send messages using the configured audio model."""
+        """Send messages using the configured text-to-speech model."""
+        import os
         return await self.chat(
             messages=messages,
-            model=self.get_audio_model(),
+            model=self.get_tts_model(),
             system_prompt=system_prompt,
             max_tokens=max_tokens,
             temperature=temperature,
+            api_key=os.environ.get("AUDIO_API_KEY") or None,
         )
 
     def get_stats(self) -> dict:

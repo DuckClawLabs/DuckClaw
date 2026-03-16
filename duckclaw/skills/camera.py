@@ -169,18 +169,25 @@ class CameraSkill(BaseSkill):
                     ],
                 }
             ]
-            analysis = await self._llm.chat(messages=messages)
+            analysis = await self._llm.chat_vision(messages=messages)
             return SkillResult(
                 success=True,
                 data=analysis,
                 action_taken=f"Captured and analyzed camera {camera_index}",
                 metadata=capture_result.metadata,
             )
+        except ValueError as e:
+            # Model capability error — surface directly so user knows to fix settings
+            return SkillResult(
+                success=False,
+                error=str(e),
+                metadata=capture_result.metadata,
+            )
         except Exception as e:
             return SkillResult(
                 success=False,
                 error=f"Vision analysis failed: {e}",
-                data={"image_base64": b64},  # Return image even if analysis fails
+                metadata=capture_result.metadata,
             )
 
     # ── Helpers ────────────────────────────────────────────────────────────────

@@ -162,12 +162,24 @@ def create_app() -> FastAPI:
 
     @app.get("/settings", response_class=HTMLResponse)
     async def dashboard_settings(request: Request):
+        import re as _re
         config = load_config()
+
+        # Load existing API keys from ~/.duckclaw/.env
+        env_keys: dict[str, str] = {}
+        env_path = Path.home() / ".duckclaw" / ".env"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                m = _re.match(r"^([A-Z_]+)=(.*)$", line.strip())
+                if m:
+                    env_keys[m.group(1)] = m.group(2)
+
         return templates.TemplateResponse("settings.html", {
             "request": request,
             "page": "settings",
             "title": "Settings — DuckClaw",
             "config": config,
+            "env_keys": env_keys,
         })
 
     # ── API Routes ────────────────────────────────────────────────────────────
@@ -244,6 +256,49 @@ def create_app() -> FastAPI:
             offset=offset,
         )
         return JSONResponse({"conversations": rows, "total": len(rows)})
+
+    @app.get("/api/db/history/search")
+    async def api_history_search(
+        q: Optional[str] = None,
+        limit: int = 10,
+    ):
+        """Return recent chat sessions grouped by session_id, optionally filtered by query.
+
+        Each result contains:
+          - session_id
+          - snippet: first user message of the session (or matching message when q is set)
+          - last_active: timestamp of the most recent message in the session
+          - match_count: number of messages matching q (only when q is set)
+        """
+        orc = get_orchestrator()
+
+        # Fetch user messages, filtered by q when provided
+        rows = orc.memory.list_conversations(
+            role="user",
+            q=q or None,
+            limit=1000,  # gather enough to group across sessions
+            offset=0,
+        )
+
+        # Group by session_id: track first snippet and latest activity
+        sessions: dict = {}
+        for m in rows:
+            sid = m["session_id"]
+            if sid not in sessions:
+                sessions[sid] = {
+                    "session_id": sid,
+                    "snippet": m["content"],
+                    "last_active": m["created_at"],
+                    "match_count": 1,
+                }
+            else:
+                sessions[sid]["match_count"] += 1
+                if m["created_at"] > sessions[sid]["last_active"]:
+                    sessions[sid]["last_active"] = m["created_at"]
+
+        # Sort by most recently active, cap at limit
+        results = sorted(sessions.values(), key=lambda s: s["last_active"], reverse=True)[:limit]
+        return JSONResponse({"sessions": results, "total": len(results)})
 
     _MAX_FILES = 10
     _MAX_TOTAL_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -401,8 +456,8 @@ def create_app() -> FastAPI:
                 raw["llm"]["reasoning_model"] = str(llm["reasoning_model"]).strip()
             if "vision_model" in llm:
                 raw["llm"]["vision_model"] = str(llm["vision_model"]).strip()
-            if "audio_model" in llm:
-                raw["llm"]["audio_model"] = str(llm["audio_model"]).strip()
+            if "tts_model" in llm:
+                raw["llm"]["tts_model"] = str(llm["tts_model"]).strip()
             if "max_tokens" in llm:
                 raw["llm"]["max_tokens"] = int(llm["max_tokens"])
             if "temperature" in llm:
@@ -436,6 +491,38 @@ def create_app() -> FastAPI:
 
         with open(config_path, "w") as f:
             yaml.dump(raw, f, default_flow_style=False, allow_unicode=True)
+
+        # Write any provided API keys to ~/.duckclaw/.env
+        if "keys" in body:
+            import re
+            env_dir = Path.home() / ".duckclaw"
+            env_path = env_dir / ".env"
+            env_dir.mkdir(parents=True, exist_ok=True)
+
+            # Read existing entries
+            existing: dict[str, str] = {}
+            if env_path.exists():
+                for line in env_path.read_text().splitlines():
+                    m = re.match(r"^([A-Z_]+)=(.*)$", line.strip())
+                    if m:
+                        existing[m.group(1)] = m.group(2)
+
+            key_map = {
+                "primary_model_key":  "PRIMARY_MODEL_KEY",
+                "reasoning_api_key":  "REASONING_API_KEY",
+                "vision_api_key":     "VISION_API_KEY",
+                "audio_api_key":      "AUDIO_API_KEY",
+            }
+            updated = []
+            for field, env_name in key_map.items():
+                val = str(body["keys"].get(field, "")).strip()
+                if val:
+                    existing[env_name] = val
+                    updated.append(env_name)
+
+            env_path.write_text("\n".join(f"{k}={v}" for k, v in existing.items()) + "\n")
+            env_path.chmod(0o600)
+
         return JSONResponse({"saved": True, "message": "Settings saved. Restart DuckClaw to apply."})
 
     @app.get("/api/llm/stats")
@@ -619,6 +706,29 @@ def create_app() -> FastAPI:
         logger.info("Approval callback set. Setting notify callback.")
         orc.permissions.set_notify_callback(ws_notify_callback)
 
+        # Track which session this socket is serving so skill jobs can push live
+        _current_session_id: list[str] = [""]  # mutable container for closure
+
+        async def _push_skill_result(result: dict):
+            """Push a scheduled skill result live to this WebSocket."""
+            try:
+                await websocket.send_json({
+                    "type":       "scheduled_result",
+                    "content":    result["content"],
+                    "image_path": result.get("image_path"),
+                    "session_id": result["session_id"],
+                })
+            except Exception:
+                pass
+
+        try:
+            from duckclaw.skills.scheduler import (
+                register_session_callback, unregister_session_callback,
+            )
+            _sched_callbacks_available = True
+        except Exception:
+            _sched_callbacks_available = False
+
         try:
             while True:
                 raw = await websocket.receive_json()
@@ -631,6 +741,13 @@ def create_app() -> FastAPI:
                     logger.info(f"Processing chat message for session_id={session_id}: {user_msg}")
                     if not user_msg:
                         continue
+
+                    # Register this socket for live skill-job pushes on first message
+                    if _sched_callbacks_available and _current_session_id[0] != session_id:
+                        if _current_session_id[0]:
+                            unregister_session_callback(_current_session_id[0])
+                        _current_session_id[0] = session_id
+                        register_session_callback(session_id, _push_skill_result)
 
                     await websocket.send_json({"type": "thinking"})
 
@@ -677,5 +794,8 @@ def create_app() -> FastAPI:
                 await websocket.send_json({"type": "error", "message": str(e)})
             except Exception:
                 pass
+        finally:
+            if _sched_callbacks_available and _current_session_id[0]:
+                unregister_session_callback(_current_session_id[0])
 
     return app

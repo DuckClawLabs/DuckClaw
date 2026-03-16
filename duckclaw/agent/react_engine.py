@@ -291,6 +291,9 @@ class ReActEngine:
         steps: list[AgentStep] = []
         skills_used: list[str] = []
         seen_calls: set[str] = set()  # loop guard
+        # Skills that should only ever be called once per turn (capture hardware access)
+        _SINGLE_USE_SKILLS = {"screen_capture", "camera"}
+        single_use_called: set[str] = set()
 
         # Build skills context — top-5 relevant via ChromaDB, or full static list
         skills_ctx = _build_skills_context(message, memory_store, skill_registry)
@@ -402,6 +405,18 @@ class ReActEngine:
                     skill_success=False,
                 ))
                 continue
+
+            # Single-use guard — screen_capture / camera only once per turn
+            if skill_name in _SINGLE_USE_SKILLS and skill_name in single_use_called:
+                steps.append(AgentStep(
+                    iteration=iteration,
+                    thought=thought,
+                    observation=f"{skill_name} already used this turn. Use the existing observation to answer.",
+                    skill_success=False,
+                ))
+                break
+            if skill_name in _SINGLE_USE_SKILLS:
+                single_use_called.add(skill_name)
 
             # Loop guard — refuse exact duplicate calls
             call_key = f"{skill_name}.{skill_action}:{json.dumps(params, sort_keys=True)}"

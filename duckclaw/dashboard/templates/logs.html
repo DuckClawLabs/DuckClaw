@@ -324,8 +324,10 @@
 
     if (data.file) {
       const lbl = document.getElementById('filePathLabel');
-      lbl.textContent = data.file;
-      lbl.style.display = 'inline';
+      if (lbl) {
+        lbl.textContent = data.file;
+        lbl.style.display = 'inline';
+      }
     }
 
     // Update stats from full unfiltered counts

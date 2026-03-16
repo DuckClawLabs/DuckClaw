@@ -21,7 +21,7 @@ from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from duckclaw.llm.router import LLMRouter
-    from duckclaw.agent.react_engine import ReActResult
+    from duckclaw.agent.react_engine_v3 import ReActV3Result as ReActResult
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ class ReflectionAgent:
         Fast-path: if no skills were used, approve immediately.
         """
         # Fast path: no skills used → pure knowledge answer, trust it directly
-        skill_steps = [s for s in react_result.steps if s.skill_name]
+        skill_steps = [s for s in react_result.step_results if s.skill]
         if not skill_steps:
             logger.info("Reflection: fast-path — no skills used, auto-approved")
             return ReflectionResult(
@@ -93,9 +93,9 @@ class ReflectionAgent:
         # Build observations summary (capped for context efficiency)
         obs_parts: list[str] = []
         for step in skill_steps:
-            if step.observation:
-                snippet = step.observation[:600]
-                obs_parts.append(f"[{step.skill_name}.{step.skill_action}]: {snippet}")
+            if step.output:
+                snippet = step.output[:600]
+                obs_parts.append(f"[{step.skill}.{step.action}]: {snippet}")
 
         observations_text = (
             "\n".join(obs_parts) if obs_parts else "(no observations captured)"

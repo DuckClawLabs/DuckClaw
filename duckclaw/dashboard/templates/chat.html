@@ -69,6 +69,7 @@
 
   .message-bubble pre {
     background: #0d1117;
+    color: #e6edf3;
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 12px;
@@ -79,10 +80,16 @@
     line-height: 1.5;
   }
 
+  .message-bubble pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+  }
+
   .message-bubble code {
     font-family: var(--font-mono);
     font-size: 12px;
-    background: rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.08);
     padding: 2px 5px;
     border-radius: 3px;
   }
@@ -339,9 +346,25 @@
   <!-- Chat header -->
   <div class="page-header">
     <span class="page-title">💬 Chat</span>
-    <button class="btn btn-ghost" onclick="newConversation()" title="Start a new conversation">
-      ✦ New Chat
-    </button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" onclick="openHistoryPanel()" title="Search chat history">
+        🔍 History
+      </button>
+      <button class="btn btn-ghost" onclick="newConversation()" title="Start a new conversation">
+        ✦ New Chat
+      </button>
+    </div>
+  </div>
+
+  <!-- History Panel -->
+  <div id="historyOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;" onclick="closeHistoryPanel(event)">
+    <div id="historyPanel" style="position:absolute;top:64px;right:16px;width:360px;max-height:540px;background:var(--surface);border:1px solid var(--border2);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+        <input id="historySearch" type="text" placeholder="Search conversations…" oninput="filterHistory()" style="flex:1;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:7px 11px;color:var(--text);font-size:13px;outline:none;">
+        <button onclick="closeHistoryPanel()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:18px;line-height:1;">✕</button>
+      </div>
+      <div id="historyList" style="overflow-y:auto;flex:1;padding:8px;"></div>
+    </div>
   </div>
 
   <!-- Messages -->
@@ -477,7 +500,7 @@
   }
 
   // ── Message Rendering ──────────────────────────────────────────────────────
-  function appendMessage(role, content, imagePath = null) {
+  function appendMessage(role, content, imagePath = null, timestamp = null) {
     messageCount++;
     const messages = document.getElementById('messages');
 
@@ -513,7 +536,8 @@
 
     const time = document.createElement('div');
     time.className = 'message-time';
-    time.textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const ts = timestamp ? new Date(timestamp) : new Date();
+    time.textContent = ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 
     right.appendChild(bubble);
     right.appendChild(time);
@@ -683,8 +707,17 @@
   async function resumeSession(sid) {
     try {
       const data = await fetch(`/api/db/conversations?session_id=${encodeURIComponent(sid)}&limit=200`).then(r => r.json());
-      const msgs = (data.conversations || []).reverse(); // oldest first
+      const msgs = (data.conversations || []).sort((a, b) =>
+        new Date(a.created_at) - new Date(b.created_at)  // oldest first, guaranteed by timestamp
+      );
       if (!msgs.length) return;
+
+      closeHistoryPanel();
+
+      // Clear existing messages and reset state
+      const messages = document.getElementById('messages');
+      messages.querySelectorAll('.message').forEach(el => el.remove());
+      messageCount = 0;
 
       // Hide welcome, set session
       document.getElementById('welcome').style.display = 'none';
@@ -692,10 +725,77 @@
 
       for (const m of msgs) {
         if (m.role === 'user' || m.role === 'assistant') {
-          appendMessage(m.role, m.content);
+          // image_path may be null for old messages — try to extract from content as fallback
+          let imgPath = m.image_path || null;
+          if (!imgPath && m.role === 'assistant') {
+            const match = m.content.match(/→\s*(\/[^\s)]+\.(?:jpg|jpeg|png))/i);
+            if (match) imgPath = match[1];
+          }
+          appendMessage(m.role, m.content, imgPath, m.created_at || null);
         }
       }
     } catch(e) { console.error('Failed to resume session', e); }
+  }
+
+  // ── History Panel ──────────────────────────────────────────────────────────
+  let _allHistorySessions = [];
+
+  async function openHistoryPanel() {
+    document.getElementById('historyOverlay').style.display = '';
+    document.getElementById('historySearch').value = '';
+    document.getElementById('historySearch').focus();
+    document.getElementById('historyList').innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px;">Loading…</div>';
+
+    try {
+      await _fetchHistory('');
+    } catch(e) {
+      document.getElementById('historyList').innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px;">Failed to load history.</div>';
+    }
+  }
+
+  let _historySearchTimer = null;
+  function filterHistory() {
+    clearTimeout(_historySearchTimer);
+    _historySearchTimer = setTimeout(async () => {
+      const q = document.getElementById('historySearch').value.trim();
+      await _fetchHistory(q);
+    }, 250);
+  }
+
+  async function _fetchHistory(q) {
+    const url = '/api/db/history/search?limit=10' + (q ? '&q=' + encodeURIComponent(q) : '');
+    const data = await fetch(url).then(r => r.json());
+    _allHistorySessions = (data.sessions || []).map(s => ({
+      sid: s.session_id,
+      snippet: s.snippet,
+      date: s.last_active,
+    }));
+    renderHistoryList(_allHistorySessions);
+  }
+
+  function renderHistoryList(sessions) {
+    const list = document.getElementById('historyList');
+    if (!sessions.length) {
+      list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px;">No conversations found.</div>';
+      return;
+    }
+    list.innerHTML = sessions.map(s => {
+      const snippet = s.snippet.length > 72 ? s.snippet.slice(0, 72) + '…' : s.snippet;
+      const date = s.date ? s.date.slice(0, 10) : '';
+      const sid = s.sid.replace(/'/g, "\\'");
+      return `<div onclick="resumeSession('${sid}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:all 0.12s;"
+        onmouseover="this.style.background='var(--surface2)';this.style.borderColor='var(--border2)'"
+        onmouseout="this.style.background='';this.style.borderColor='transparent'">
+        <span style="font-size:15px;flex-shrink:0">💬</span>
+        <span style="flex:1;font-size:12.5px;color:var(--text-dim);overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(snippet)}</span>
+        <span style="font-size:10px;color:var(--text-muted);white-space:nowrap;font-family:var(--font-mono)">${date}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function closeHistoryPanel(e) {
+    if (e && document.getElementById('historyPanel').contains(e.target)) return;
+    document.getElementById('historyOverlay').style.display = 'none';
   }
 
   function esc(s) {

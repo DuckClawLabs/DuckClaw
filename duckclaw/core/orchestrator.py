@@ -32,6 +32,7 @@ preserved exactly as before.
 
 import asyncio
 import logging
+import re
 import uuid
 from typing import Optional
 
@@ -44,7 +45,7 @@ from duckclaw.skills.registry import SkillRegistry
 from duckclaw.security.context_isolation import scan_output
 
 # Agent pipeline
-from duckclaw.agent.react_engine import ReActEngine
+from duckclaw.agent.react_engine_v3 import ReActEngineV3 as ReActEngine
 from duckclaw.agent.reflection import ReflectionAgent, ReflectionResult
 from duckclaw.agent.synthesizer import ResponseSynthesizer
 
@@ -108,8 +109,9 @@ class Orchestrator:
 
         # Restore scheduled jobs persisted before the last shutdown
         try:
-            from duckclaw.skills.scheduler import restore_jobs
+            from duckclaw.skills.scheduler import restore_jobs, set_orchestrator as _set_sched_orc
             restore_jobs(self.memory)
+            _set_sched_orc(self)
         except Exception as e:
             logger.warning(f"Could not restore scheduled jobs: {e}")
 
@@ -119,7 +121,7 @@ class Orchestrator:
             f"primary={self.config.llm.model} | "
             f"reasoning={self.llm.get_reasoning_model()} | "
             f"vision={self.llm.get_vision_model()} | "
-            f"audio={self.llm.get_audio_model()}"
+            f"tts={self.llm.get_tts_model()}"
         )
 
     # ── Main entry point ──────────────────────────────────────────────────────
@@ -172,7 +174,7 @@ class Orchestrator:
             )
             skills_used = react_result.skills_used
             logger.info(
-                f"ReAct complete: iters={react_result.iterations}, "
+                f"ReAct complete: waves={react_result.waves}, "
                 f"skills={skills_used}, success={react_result.success}"
             )
         except Exception as e:
@@ -218,18 +220,25 @@ class Orchestrator:
                 injection_warnings.extend(out_warnings)
                 await self._log_injection_warnings(out_warnings, session_id, source)
 
+        # Extract image metadata (screen_capture / camera skills)
+        for step in react_result.step_results:
+            if step.skill not in ("screen_capture", "camera") or not step.success:
+                continue
+            meta = step.metadata or {}
+            path = meta.get("saved_path")
+            if not path and step.output:
+                m = re.search(r'→\s*(/[^\s]+\.(?:jpg|jpeg|png))', step.output)
+                if m:
+                    path = m.group(1)
+            if path:
+                image_path = path
+
         # ── [7] Save to memory ────────────────────────────────────────────
         self.memory.save_message(session_id, "user", message, source)
-        self.memory.save_message(session_id, "assistant", reply, source)
+        self.memory.save_message(session_id, "assistant", reply, source, image_path=image_path)
 
         # Background fact extraction (non-blocking)
         asyncio.create_task(self._extract_facts_background(message, session_id))
-
-        # Extract image metadata (screen_capture / camera skills)
-        for step in react_result.steps:
-            if step.skill_name in ("screen_capture", "camera") and step.skill_success:
-                meta = step.skill_metadata or {}
-                image_path = meta.get("saved_path") or image_path
 
         return self._build_response(
             reply=reply,
@@ -238,8 +247,8 @@ class Orchestrator:
             injection_warnings=injection_warnings,
             image_b64=image_b64,
             image_path=image_path,
-            react_steps=len(react_result.steps),
-            iterations=react_result.iterations,
+            react_steps=len(react_result.step_results),
+            iterations=react_result.waves,
         )
 
     # ── Context builder ───────────────────────────────────────────────────────
@@ -328,6 +337,43 @@ class Orchestrator:
                 logger.debug(f"Extracted {len(facts)} facts — session={session_id}")
         except Exception as e:
             logger.warning(f"Background fact extraction failed: {e}")
+
+    # ── Scheduled skill execution ─────────────────────────────────────────────
+
+    async def run_scheduled_skill(
+        self,
+        session_id: str,
+        skill_name: str,
+        action: str,
+        params: dict,
+    ) -> dict:
+        """
+        Execute a skill on behalf of a scheduled job.
+        Saves the result as an assistant message in the session so it
+        appears in chat history when the user returns to that session.
+        """
+        if not self._initialized:
+            await self.initialize()
+        try:
+            skill_result = await self.skills.dispatch(
+                skill_name, action, params, session_id=session_id
+            )
+            content    = str(skill_result.data) if skill_result.success else f"⚠️ Scheduled task failed: {skill_result.error}"
+            image_path = (skill_result.metadata or {}).get("saved_path")
+            self.memory.save_message(
+                session_id, "assistant", content, source="scheduler", image_path=image_path
+            )
+            return {
+                "success":    skill_result.success,
+                "content":    content,
+                "image_path": image_path,
+                "session_id": session_id,
+            }
+        except Exception as e:
+            error_msg = f"⚠️ Scheduled {skill_name}.{action} failed: {e}"
+            logger.error(error_msg)
+            self.memory.save_message(session_id, "assistant", error_msg, source="scheduler")
+            return {"success": False, "content": error_msg, "session_id": session_id}
 
     # ── Stats & lifecycle ─────────────────────────────────────────────────────
 

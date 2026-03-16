@@ -106,7 +106,7 @@
 
     const res = await fetch(`/api/memory/facts/${factId}`, { method: 'DELETE' });
     if (res.ok) {
-      btn.closest('tr').remove();
+      location.reload();
     } else {
       btn.disabled = false;
       btn.textContent = 'Delete';

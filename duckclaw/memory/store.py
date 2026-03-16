@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
     trigger_type TEXT NOT NULL,
     trigger_data TEXT NOT NULL,
     message      TEXT NOT NULL,
+    session_id   TEXT DEFAULT '',
+    skill_name   TEXT DEFAULT '',
+    skill_action TEXT DEFAULT '',
+    skill_params TEXT DEFAULT '',
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -53,6 +57,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     role        TEXT NOT NULL,
     content     TEXT NOT NULL,
     source      TEXT DEFAULT 'terminal',
+    image_path  TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -99,6 +104,21 @@ class MemoryStore:
         self._db.executescript(CONVERSATIONS_SCHEMA)
         self._db.executescript(INGESTED_SCHEMA)
         self._db.executescript(SCHEDULED_JOBS_SCHEMA)
+        # Migrate existing DBs: add image_path if missing
+        existing_cols = {row[1] for row in self._db.execute("PRAGMA table_info(conversations)").fetchall()}
+        if "image_path" not in existing_cols:
+            self._db.execute("ALTER TABLE conversations ADD COLUMN image_path TEXT")
+
+        # Migrate scheduled_jobs: add skill columns if missing
+        sj_cols = {row[1] for row in self._db.execute("PRAGMA table_info(scheduled_jobs)").fetchall()}
+        for col, defn in [
+            ("session_id",   "TEXT DEFAULT ''"),
+            ("skill_name",   "TEXT DEFAULT ''"),
+            ("skill_action", "TEXT DEFAULT ''"),
+            ("skill_params", "TEXT DEFAULT ''"),
+        ]:
+            if col not in sj_cols:
+                self._db.execute(f"ALTER TABLE scheduled_jobs ADD COLUMN {col} {defn}")
         self._db.commit()
 
         # ChromaDB (embedded — no server needed)
@@ -359,11 +379,12 @@ class MemoryStore:
         role: str,
         content: str,
         source: str = "terminal",
+        image_path: Optional[str] = None,
     ) -> int:
         """Save a conversation message to history."""
         cursor = self._db.execute(
-            "INSERT INTO conversations (session_id, role, content, source) VALUES (?, ?, ?, ?)",
-            (session_id, role, content, source),
+            "INSERT INTO conversations (session_id, role, content, source, image_path) VALUES (?, ?, ?, ?, ?)",
+            (session_id, role, content, source, image_path),
         )
         self._db.commit()
         msg_id = cursor.lastrowid
@@ -493,13 +514,23 @@ class MemoryStore:
     # ─── Scheduled Jobs ───────────────────────────────────────────────────────
 
     def save_scheduled_job(
-        self, job_id: str, trigger_type: str, trigger_data: dict, message: str
+        self,
+        job_id: str,
+        trigger_type: str,
+        trigger_data: dict,
+        message: str,
+        session_id: str = "",
+        skill_name: str = "",
+        skill_action: str = "",
+        skill_params: str = "",
     ) -> None:
         """Persist a scheduled job so it survives server restarts."""
         self._db.execute(
-            "INSERT OR REPLACE INTO scheduled_jobs (id, trigger_type, trigger_data, message)"
-            " VALUES (?, ?, ?, ?)",
-            (job_id, trigger_type, json.dumps(trigger_data), message),
+            "INSERT OR REPLACE INTO scheduled_jobs "
+            "(id, trigger_type, trigger_data, message, session_id, skill_name, skill_action, skill_params)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (job_id, trigger_type, json.dumps(trigger_data), message,
+             session_id, skill_name, skill_action, skill_params),
         )
         self._db.commit()
 

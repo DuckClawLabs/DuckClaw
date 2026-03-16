@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from duckclaw.llm.router import LLMRouter
-    from duckclaw.agent.react_engine import ReActResult
+    from duckclaw.agent.react_engine_v3 import ReActV3Result as ReActResult
     from duckclaw.agent.reflection import ReflectionResult
 
 logger = logging.getLogger(__name__)
@@ -74,11 +74,11 @@ class ResponseSynthesizer:
 
         # Compile all skill observations as evidence
         evidence_parts: list[str] = []
-        for step in react_result.steps:
-            if step.skill_name and step.observation:
+        for step in react_result.step_results:
+            if step.skill and step.output:
                 evidence_parts.append(
-                    f"### Evidence: {step.skill_name}.{step.skill_action}\n"
-                    f"{step.observation[:1500]}"
+                    f"### Evidence: {step.skill}.{step.action}\n"
+                    f"{step.output[:1500]}"
                 )
 
         evidence_text = "\n\n".join(evidence_parts) if evidence_parts else ""

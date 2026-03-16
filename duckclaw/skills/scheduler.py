@@ -5,6 +5,7 @@ Background tasks default to Tier: NOTIFY (inform, don't act without approval).
 """
 
 import asyncio
+import json as _json
 import logging
 from datetime import datetime, timezone
 from typing import Callable, Optional
@@ -16,7 +17,9 @@ logger = logging.getLogger(__name__)
 # Global scheduler instance (shared across skills)
 _scheduler = None
 _notify_callback: Optional[Callable] = None
-_memory_store = None  # set via set_memory_store() for job persistence
+_memory_store = None        # set via set_memory_store() for job persistence
+_orchestrator = None        # set via set_orchestrator() for skill job execution
+_active_sessions: dict[str, Callable] = {}  # session_id → ws push callback
 
 
 def get_scheduler():
@@ -44,12 +47,43 @@ def set_memory_store(store) -> None:
     _memory_store = store
 
 
+def set_orchestrator(orc) -> None:
+    """Wire the orchestrator so skill jobs can execute skills and save results."""
+    global _orchestrator
+    _orchestrator = orc
+
+
+def register_session_callback(session_id: str, callback: Callable) -> None:
+    """Register a WebSocket push callback for a session (called on WS connect)."""
+    _active_sessions[session_id] = callback
+
+
+def unregister_session_callback(session_id: str) -> None:
+    """Remove session callback (called on WS disconnect)."""
+    _active_sessions.pop(session_id, None)
+
+
 def _persist_job(job_id: str, trigger_type: str, trigger_data: dict, message: str) -> None:
     if _memory_store:
         try:
             _memory_store.save_scheduled_job(job_id, trigger_type, trigger_data, message)
         except Exception as e:
             logger.warning(f"Failed to persist job {job_id}: {e}")
+
+
+def _persist_skill_job(
+    job_id: str, trigger_type: str, trigger_data: dict, label: str,
+    session_id: str, skill_name: str, skill_action: str, skill_params: str,
+) -> None:
+    if _memory_store:
+        try:
+            _memory_store.save_scheduled_job(
+                job_id, trigger_type, trigger_data, label,
+                session_id=session_id, skill_name=skill_name,
+                skill_action=skill_action, skill_params=skill_params,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to persist skill job {job_id}: {e}")
 
 
 def _unpersist_job(job_id: str) -> None:
@@ -77,6 +111,27 @@ async def _fire_once_reminder(message: str, job_id: str):
     await _fire_reminder(message, job_id)
 
 
+async def _fire_skill_job(
+    session_id: str, skill_name: str, action: str, params_json: str, job_id: str
+):
+    """Execute a skill, save the result to the session, and push live if the session is open."""
+    if _orchestrator is None:
+        logger.warning(f"Skill job {job_id} fired but orchestrator not set — skipping")
+        return
+    try:
+        params = _json.loads(params_json) if params_json else {}
+        result = await _orchestrator.run_scheduled_skill(session_id, skill_name, action, params)
+        # Push live to the UI if the session is currently open
+        callback = _active_sessions.get(session_id)
+        if callback:
+            try:
+                await callback(result)
+            except Exception as e:
+                logger.warning(f"Live push to session {session_id} failed: {e}")
+    except Exception as e:
+        logger.error(f"Skill job {job_id} ({skill_name}.{action}) failed: {e}")
+
+
 def restore_jobs(memory_store) -> None:
     """
     Re-schedule all persisted jobs from SQLite after a server restart.
@@ -91,40 +146,66 @@ def restore_jobs(memory_store) -> None:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     restored = 0
     for job in jobs:
-        job_id = job["id"]
+        job_id       = job["id"]
         trigger_type = job["trigger_type"]
         trigger_data = job["trigger_data"]
-        message = job["message"]
+        message      = job["message"]
+        skill_name   = job.get("skill_name", "")
+        skill_action = job.get("skill_action", "")
+        skill_params = job.get("skill_params", "")
+        session_id   = job.get("session_id", "")
+        is_skill_job = bool(skill_name and skill_action and session_id)
         try:
-            if trigger_type == "date":
-                run_date = datetime.fromisoformat(trigger_data["run_date"])
-                run_date_naive = run_date.replace(tzinfo=None)
-                # Discard stale one-shot jobs older than 1 hour
-                if (now - run_date_naive).total_seconds() > 3600:
-                    memory_store.delete_scheduled_job(job_id)
-                    logger.info(f"Discarded stale job {job_id} (was due {run_date_naive})")
-                    continue
-                scheduler.add_job(
-                    _fire_once_reminder, "date",
-                    run_date=run_date_naive,
-                    args=[message, job_id],
-                    id=job_id,
-                    replace_existing=True,
-                )
-            elif trigger_type == "cron":
-                scheduler.add_job(
-                    _fire_reminder, "cron",
-                    minute=trigger_data.get("minute", "*"),
-                    hour=trigger_data.get("hour", "*"),
-                    day=trigger_data.get("day", "*"),
-                    month=trigger_data.get("month", "*"),
-                    day_of_week=trigger_data.get("day_of_week", "*"),
-                    args=[message, job_id],
-                    id=job_id,
-                    replace_existing=True,
-                )
+            if is_skill_job:
+                # Recurring skill jobs (interval or cron)
+                if trigger_type == "interval":
+                    from apscheduler.triggers.interval import IntervalTrigger
+                    seconds = trigger_data.get("seconds", 60)
+                    scheduler.add_job(
+                        _fire_skill_job, IntervalTrigger(seconds=seconds),
+                        args=[session_id, skill_name, skill_action, skill_params, job_id],
+                        id=job_id, replace_existing=True,
+                    )
+                elif trigger_type == "cron":
+                    scheduler.add_job(
+                        _fire_skill_job, "cron",
+                        minute=trigger_data.get("minute", "*"),
+                        hour=trigger_data.get("hour", "*"),
+                        day=trigger_data.get("day", "*"),
+                        month=trigger_data.get("month", "*"),
+                        day_of_week=trigger_data.get("day_of_week", "*"),
+                        args=[session_id, skill_name, skill_action, skill_params, job_id],
+                        id=job_id, replace_existing=True,
+                    )
+            else:
+                # Plain reminder jobs
+                if trigger_type == "date":
+                    run_date = datetime.fromisoformat(trigger_data["run_date"])
+                    run_date_naive = run_date.replace(tzinfo=None)
+                    # Discard stale one-shot jobs older than 1 hour
+                    if (now - run_date_naive).total_seconds() > 3600:
+                        memory_store.delete_scheduled_job(job_id)
+                        logger.info(f"Discarded stale job {job_id} (was due {run_date_naive})")
+                        continue
+                    scheduler.add_job(
+                        _fire_once_reminder, "date",
+                        run_date=run_date_naive,
+                        args=[message, job_id],
+                        id=job_id, replace_existing=True,
+                    )
+                elif trigger_type == "cron":
+                    scheduler.add_job(
+                        _fire_reminder, "cron",
+                        minute=trigger_data.get("minute", "*"),
+                        hour=trigger_data.get("hour", "*"),
+                        day=trigger_data.get("day", "*"),
+                        month=trigger_data.get("month", "*"),
+                        day_of_week=trigger_data.get("day_of_week", "*"),
+                        args=[message, job_id],
+                        id=job_id, replace_existing=True,
+                    )
             restored += 1
-            logger.info(f"Restored job {job_id} ({trigger_type})")
+            logger.info(f"Restored job {job_id} ({trigger_type}, skill={is_skill_job})")
         except Exception as e:
             logger.warning(f"Failed to restore job {job_id}: {e}")
 
@@ -139,12 +220,13 @@ class SchedulerSkill(BaseSkill):
 
     async def execute(self, action: str, params: dict) -> SkillResult:
         dispatch = {
-            "remind_in":     self._remind_in,
-            "remind_at":     self._remind_at,
-            "add_cron":      self._add_cron,
-            "list_jobs":     self._list_jobs,
-            "remove_job":    self._remove_job,
-            "morning_brief": self._morning_brief,
+            "remind_in":          self._remind_in,
+            "remind_at":          self._remind_at,
+            "add_cron":           self._add_cron,
+            "list_jobs":          self._list_jobs,
+            "remove_job":         self._remove_job,
+            "morning_brief":      self._morning_brief,
+            "schedule_skill_job": self._schedule_skill_job,
         }
         handler = dispatch.get(action, self._remind_in)
         if not handler:
@@ -373,3 +455,88 @@ class SchedulerSkill(BaseSkill):
         )
         logger.info(f"Morning briefing action returning SkillResult: {morning_brief_sr}")
         return morning_brief_sr
+
+    async def _schedule_skill_job(self, params: dict) -> SkillResult:
+        """
+        Schedule a recurring skill execution tied to a session.
+
+        Required params:
+          session_id       — the chat session to save results into
+          skill_name       — e.g. "camera" or "screen_capture"
+          action           — e.g. "snap_analyze" or "capture_and_analyze"
+          interval_seconds — run every N seconds  (use this OR cron)
+          cron             — 5-field cron expression (use this OR interval_seconds)
+
+        Optional:
+          skill_params     — dict passed straight to the skill
+          label            — human-readable name shown in list_jobs
+        """
+        session_id       = params.get("session_id", "")
+        skill_name       = params.get("skill_name", "")
+        action           = params.get("action", "")
+        skill_params     = params.get("skill_params", {})
+        interval_seconds = int(params.get("interval_seconds", 0))
+        cron_expr        = params.get("cron", "")
+        label            = params.get("label", f"{skill_name}.{action}")
+
+        if not session_id or not skill_name or not action:
+            return SkillResult(success=False, error="session_id, skill_name, and action are required")
+        if not interval_seconds and not cron_expr:
+            return SkillResult(success=False, error="interval_seconds or cron required")
+
+        approved = await self._check(
+            "scheduler.add",
+            f"Run '{label}' every {interval_seconds}s in this session" if interval_seconds
+            else f"Run '{label}' on schedule ({cron_expr}) in this session",
+            details={"skill": skill_name, "action": action,
+                     "interval_seconds": interval_seconds, "cron": cron_expr},
+        )
+        if not approved:
+            return SkillResult(success=False, error="Skill job creation denied.")
+
+        scheduler = get_scheduler()
+        if not scheduler:
+            return SkillResult(success=False, error="APScheduler not available. Install: pip install apscheduler")
+
+        params_json = _json.dumps(skill_params)
+        job_id = f"skill_{skill_name}_{action}_{session_id[:8]}"
+
+        if interval_seconds:
+            from apscheduler.triggers.interval import IntervalTrigger
+            scheduler.add_job(
+                _fire_skill_job, IntervalTrigger(seconds=interval_seconds),
+                args=[session_id, skill_name, action, params_json, job_id],
+                id=job_id, replace_existing=True,
+            )
+            _persist_skill_job(
+                job_id, "interval", {"seconds": interval_seconds}, label,
+                session_id, skill_name, action, params_json,
+            )
+            return SkillResult(
+                success=True,
+                data=f"✅ '{label}' scheduled every {interval_seconds}s — results saved to this session",
+                action_taken=f"Skill job scheduled: {label}",
+                metadata={"job_id": job_id},
+            )
+        else:
+            parts = cron_expr.strip().split()
+            if len(parts) != 5:
+                return SkillResult(success=False, error="Cron must be 5 fields: minute hour day month weekday")
+            minute, hour, day, month, dow = parts
+            scheduler.add_job(
+                _fire_skill_job, "cron",
+                minute=minute, hour=hour, day=day, month=month, day_of_week=dow,
+                args=[session_id, skill_name, action, params_json, job_id],
+                id=job_id, replace_existing=True,
+            )
+            _persist_skill_job(
+                job_id, "cron",
+                {"minute": minute, "hour": hour, "day": day, "month": month, "day_of_week": dow},
+                label, session_id, skill_name, action, params_json,
+            )
+            return SkillResult(
+                success=True,
+                data=f"✅ '{label}' scheduled (cron: {cron_expr}) — results saved to this session",
+                action_taken=f"Skill job scheduled: {label}",
+                metadata={"job_id": job_id},
+            )
