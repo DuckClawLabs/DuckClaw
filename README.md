@@ -102,73 +102,6 @@ DuckClaw: ⚠️ Permission Required
 
 ---
 
-## Feature Coverage
-
-**14 fully implemented · 6 partial · 6 post-MVP**
-
-### 👁️ Vision & Screen
-
-| Feature | Status | Notes | File |
-|---|---|---|---|
-| Screenshot Capture | ✅ | ASK-tier approval + LLM vision analysis | `skills/screen_capture.py` |
-| Camera Capture | ⚠️ | Photo only — video capture not yet supported | `skills/camera.py` |
-| Media Understanding (Vision) | ⚠️ | Images sent to cloud LLM — no local PII scan or LLaVA yet | `skills/screen_capture.py` |
-
-### 🌐 Browser & Web
-
-| Feature | Status | Notes | File |
-|---|---|---|---|
-| Browser Automation | ✅ | Playwright: navigate, click, fill forms, extract text, screenshot | `skills/web_browser.py` |
-| Web Search | ⚠️ | DuckDuckGo (free) — Brave Search / SearXNG not yet added | `skills/web_search.py` |
-
-### 💬 Messaging
-
-| Feature | Status | Notes | File |
-|---|---|---|---|
-| Telegram | ✅ | Full + inline approve/deny buttons | `bridges/telegram_bridge.py` |
-| Discord | ✅ | Slash commands + button components for approvals | `bridges/discord_bridge.py` |
-| WhatsApp | ❌ | Post-MVP (Month 2) | — |
-| Slack / Signal / iMessage / Teams | ❌ | Post-MVP | — |
-
-### 🧠 Intelligence & Memory
-
-| Feature | Status | Notes | File |
-|---|---|---|---|
-| Persistent Memory | ✅ | SQLite facts + ChromaDB semantic search, viewable/deletable in dashboard | `memory/store.py` |
-| Multi-Model Support | ⚠️ | 100+ models via LiteLLM, cost tracking — smart routing by task complexity not yet added | `llm/router.py` |
-| Context Engine (Plugin Interface) | ❌ | Lifecycle hooks (bootstrap, ingest, compact) — Post-MVP (Month 2) | — |
-
-### ⚙️ Automation & Skills
-
-| Feature | Status | Notes | File |
-|---|---|---|---|
-| Shell Execution | ✅ | Blocklist for dangerous commands + NOTIFY/ASK tiers | `skills/shell_runner.py` |
-| File System Access | ✅ | Scoped allowlist + hardcoded credential blocklist | `skills/file_manager.py` |
-| Proactive Background Tasks | ✅ | APScheduler: cron, reminders, morning briefs — defaults to NOTIFY | `skills/scheduler.py` |
-| Skill & Plugin System | ⚠️ | SHA-256 verify + permission declarations — no external marketplace yet | `skills/registry.py` |
-| Code Sandbox (Python/JS exec) | ❌ | Sprint 4 candidate | — |
-| Self-Improving / Skill Creation | ❌ | Post-MVP (Month 2) — draft-state review flow planned | — |
-
-### 🎙️ Voice
-
-| Feature | Status | Notes | File |
-|---|---|---|---|
-| Voice Mode | ❌ | Post-MVP (Month 3) — Whisper STT + Piper TTS planned | — |
-
-### 🛡️ Security & Trust
-
-| Feature | Status | Notes | File |
-|---|---|---|---|
-| Permission Engine (4-tier) | ✅ | SAFE/NOTIFY/ASK/BLOCK — per-skill, configurable, conservative defaults | `permissions/engine.py` |
-| Audit Preview Mode | ✅ | ActionPreview before every ASK action — approve/deny on all platforms | `permissions/engine.py` |
-| Full Audit Log | ✅ | Every action logged, searchable, filterable, exportable JSON/CSV | `permissions/engine.py` |
-| Prompt Injection Defense | ✅ | Context isolation + dual-pass output scanning + audit logging of signals | `security/context_isolation.py` |
-| Sandboxed Skill Execution | ⚠️ | SHA-256 + permissions declared — OS-level subprocess isolation not yet enforced | `skills/base.py` |
-| Web Dashboard | ✅ | Chat, memory, audit log, settings @ localhost:8741 | `dashboard/` |
-| One Command Install | ✅ | `pip install duckclaw && duckclaw start` — pure Python, no Node.js | `pyproject.toml` |
-
----
-
 ## Architecture
 
 ### Core
@@ -318,6 +251,73 @@ DuckClaw uses `~/.duckclaw/duckclaw.yaml`. See [duckclaw.yaml.example](duckclaw.
 4. **Python simple** — one language, one install command, no build tools
 5. **Permission, not forgiveness** — ask before acting, not apologize after
 6. **Quality over quantity** — 5 secure skills beat 13,700 unvetted ones
+
+---
+
+## Feature Coverage
+
+**14 fully implemented · 6 partial · 6 post-MVP**
+
+### 👁️ Vision & Screen
+
+| Feature | Status | Notes | File |
+|---|---|---|---|
+| Screenshot Capture | ✅ | ASK-tier approval + LLM vision analysis | `skills/screen_capture.py` |
+| Camera Capture | ⚠️ | Photo only — video capture not yet supported | `skills/camera.py` |
+| Media Understanding (Vision) | ⚠️ | Images sent to cloud LLM — no local PII scan or LLaVA yet | `skills/screen_capture.py` |
+
+### 🌐 Browser & Web
+
+| Feature | Status | Notes | File |
+|---|---|---|---|
+| Browser Automation | ✅ | Playwright: navigate, click, fill forms, extract text, screenshot | `skills/web_browser.py` |
+| Web Search | ⚠️ | DuckDuckGo (free) — Brave Search / SearXNG not yet added | `skills/web_search.py` |
+
+### 💬 Messaging
+
+| Feature | Status | Notes | File |
+|---|---|---|---|
+| Telegram | ✅ | Full + inline approve/deny buttons | `bridges/telegram_bridge.py` |
+| Discord | ✅ | Slash commands + button components for approvals | `bridges/discord_bridge.py` |
+| WhatsApp | ❌ | Post-MVP (Month 2) | — |
+| Slack / Signal / iMessage / Teams | ❌ | Post-MVP | — |
+
+### 🧠 Intelligence & Memory
+
+| Feature | Status | Notes | File |
+|---|---|---|---|
+| Persistent Memory | ✅ | SQLite facts + ChromaDB semantic search, viewable/deletable in dashboard | `memory/store.py` |
+| Multi-Model Support | ⚠️ | 100+ models via LiteLLM, cost tracking — smart routing by task complexity not yet added | `llm/router.py` |
+| Context Engine (Plugin Interface) | ❌ | Lifecycle hooks (bootstrap, ingest, compact) — Post-MVP (Month 2) | — |
+
+### ⚙️ Automation & Skills
+
+| Feature | Status | Notes | File |
+|---|---|---|---|
+| Shell Execution | ✅ | Blocklist for dangerous commands + NOTIFY/ASK tiers | `skills/shell_runner.py` |
+| File System Access | ✅ | Scoped allowlist + hardcoded credential blocklist | `skills/file_manager.py` |
+| Proactive Background Tasks | ✅ | APScheduler: cron, reminders, morning briefs — defaults to NOTIFY | `skills/scheduler.py` |
+| Skill & Plugin System | ⚠️ | SHA-256 verify + permission declarations — no external marketplace yet | `skills/registry.py` |
+| Code Sandbox (Python/JS exec) | ❌ | Sprint 4 candidate | — |
+| Self-Improving / Skill Creation | ❌ | Post-MVP (Month 2) — draft-state review flow planned | — |
+
+### 🎙️ Voice
+
+| Feature | Status | Notes | File |
+|---|---|---|---|
+| Voice Mode | ❌ | Post-MVP (Month 3) — Whisper STT + Piper TTS planned | — |
+
+### 🛡️ Security & Trust
+
+| Feature | Status | Notes | File |
+|---|---|---|---|
+| Permission Engine (4-tier) | ✅ | SAFE/NOTIFY/ASK/BLOCK — per-skill, configurable, conservative defaults | `permissions/engine.py` |
+| Audit Preview Mode | ✅ | ActionPreview before every ASK action — approve/deny on all platforms | `permissions/engine.py` |
+| Full Audit Log | ✅ | Every action logged, searchable, filterable, exportable JSON/CSV | `permissions/engine.py` |
+| Prompt Injection Defense | ✅ | Context isolation + dual-pass output scanning + audit logging of signals | `security/context_isolation.py` |
+| Sandboxed Skill Execution | ⚠️ | SHA-256 + permissions declared — OS-level subprocess isolation not yet enforced | `skills/base.py` |
+| Web Dashboard | ✅ | Chat, memory, audit log, settings @ localhost:8741 | `dashboard/` |
+| One Command Install | ✅ | `pip install duckclaw && duckclaw start` — pure Python, no Node.js | `pyproject.toml` |
 
 ---
 
