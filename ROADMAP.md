@@ -3,7 +3,7 @@
 ### The Secure, Simple, Open-Source Personal AI Assistant
 **"Powerful AI — built for you, built with you, built securely."**
 
-> **Solo Developer · 30 Days · Python-First · MIT License**
+> **Solo Developer · 30 Days · Python-First · Apache  License**
 
 ---
 

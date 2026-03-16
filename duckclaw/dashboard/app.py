@@ -14,7 +14,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, UploadFile, File
 from typing import List as TypingList
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -558,6 +558,14 @@ def create_app() -> FastAPI:
         sliced = entries[-(limit + offset):][:limit] if offset == 0 else entries[-(limit + offset):-offset]
         return JSONResponse({"logs": sliced, "total": total, "source": "file", "file": str(log_path)})
 
+    @app.get("/api/files/image")
+    async def api_files_image(path: str):
+        """Serve a captured image file by absolute path."""
+        p = Path(path)
+        if not p.exists() or not p.is_file():
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        return FileResponse(p, media_type="image/jpeg")
+
     # ── WebSocket Chat (Real-time) ─────────────────────────────────────────────
 
     @app.websocket("/ws/chat")
@@ -636,8 +644,8 @@ def create_app() -> FastAPI:
                                 "content": result["reply"],
                                 "session_id": result["session_id"],
                             }
-                            if result.get("image_base64"):
-                                ws_msg["image_base64"] = result["image_base64"]
+                            if result.get("image_path"):
+                                ws_msg["image_path"] = result["image_path"]
                             try:
                                 await websocket.send_json(ws_msg)
                             except (RuntimeError, WebSocketDisconnect):

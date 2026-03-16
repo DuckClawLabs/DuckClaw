@@ -221,9 +221,8 @@ class Orchestrator:
         # Extract image metadata (screen_capture / camera skills)
         for step in react_result.steps:
             if step.skill_name in ("screen_capture", "camera") and step.skill_success:
-                # Image data is returned in SkillResult.metadata; mark for UI
-                image_b64  = None   # populated by dashboard if needed
-                image_path = None
+                meta = step.skill_metadata or {}
+                image_path = meta.get("saved_path") or image_path
 
         return self._build_response(
             reply=reply,

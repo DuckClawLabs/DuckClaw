@@ -323,7 +323,7 @@ DuckClaw uses `~/.duckclaw/duckclaw.yaml`. See [duckclaw.yaml.example](duckclaw.
 
 ## Contributing
 
-DuckClaw is MIT licensed and built in public.
+DuckClaw is Apache licensed and built in public.
 Issues, PRs, and ideas welcome.
 
 ---

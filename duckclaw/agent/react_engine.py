@@ -50,6 +50,7 @@ class AgentStep:
     observation: Optional[str] = None
     skill_success: bool = True
     is_final: bool = False
+    skill_metadata: Optional[dict] = None
 
 
 @dataclass
@@ -440,6 +441,7 @@ class ReActEngine:
                 params=params,
                 observation=observation,
                 skill_success=skill_result.success,
+                skill_metadata=skill_result.metadata or {},
             ))
 
             if skill_name not in skills_used:

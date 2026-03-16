@@ -324,6 +324,12 @@
     border: 1px solid var(--border);
     cursor: pointer;
   }
+  .capture-not-found {
+    margin-top: 8px;
+    font-size: 0.8em;
+    color: var(--text-muted, #888);
+    font-style: italic;
+  }
 </style>
 {% endblock %}
 
@@ -421,7 +427,7 @@
       showThinking(true);
     } else if (data.type === 'response') {
       showThinking(false);
-      appendMessage('assistant', data.content, data.image_base64 || null);
+      appendMessage('assistant', data.content, data.image_path || null);
       // Always unlock input when a response arrives (covers post-approval skill completion)
       document.getElementById('chatInput').disabled = false;
       document.getElementById('sendBtn').disabled = false;
@@ -471,7 +477,7 @@
   }
 
   // ── Message Rendering ──────────────────────────────────────────────────────
-  function appendMessage(role, content, imageB64 = null) {
+  function appendMessage(role, content, imagePath = null) {
     messageCount++;
     const messages = document.getElementById('messages');
 
@@ -488,11 +494,20 @@
     bubble.className = 'message-bubble';
     bubble.innerHTML = markdownToHtml(content);
 
-    if (imageB64) {
+    if (imagePath) {
       const img = document.createElement('img');
-      img.src = `data:image/jpeg;base64,${imageB64}`;
+      img.src = `/api/files/image?path=${encodeURIComponent(imagePath)}`;
       img.className = 'capture-preview';
-      img.alt = 'Screenshot';
+      img.alt = 'Captured image';
+      img.onerror = () => {
+        img.replaceWith((() => {
+          const p = document.createElement('p');
+          const folder = imagePath.substring(0, imagePath.lastIndexOf('/')) || imagePath;
+          p.className = 'capture-not-found';
+          p.textContent = `File not found at ${folder}`;
+          return p;
+        })());
+      };
       bubble.appendChild(img);
     }
 
